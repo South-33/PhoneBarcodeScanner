@@ -1,4 +1,4 @@
-import type { BarcodeMatch, ParsedPhoneMetadata } from '../types'
+import type { BarcodeMatch, LookupProof, ParsedPhoneMetadata } from '../types'
 
 type LookupRecord = {
   brand?: string
@@ -158,24 +158,56 @@ function lookupFromIdentifiers(
   serialNumber?: string,
 ) {
   if (upc && EXACT_UPC_LOOKUP[upc]) {
-    return EXACT_UPC_LOOKUP[upc]
+    return {
+      record: EXACT_UPC_LOOKUP[upc],
+      proof: {
+        source: 'exact_upc',
+        identifierType: 'upc',
+        identifierValue: upc,
+        confidence: 'exact',
+      } satisfies LookupProof,
+    }
   }
 
   if (serialNumber && EXACT_SERIAL_LOOKUP[serialNumber]) {
-    return EXACT_SERIAL_LOOKUP[serialNumber]
+    return {
+      record: EXACT_SERIAL_LOOKUP[serialNumber],
+      proof: {
+        source: 'exact_serial',
+        identifierType: 'serial',
+        identifierValue: serialNumber,
+        confidence: 'exact',
+      } satisfies LookupProof,
+    }
   }
 
   for (const imei of imeis) {
     const exact = EXACT_IMEI_LOOKUP[imei]
     if (exact) {
-      return exact
+      return {
+        record: exact,
+        proof: {
+          source: 'exact_imei',
+          identifierType: 'imei',
+          identifierValue: imei,
+          confidence: 'exact',
+        } satisfies LookupProof,
+      }
     }
   }
 
   for (const imei of imeis) {
     const tac = IMEI_TAC_LOOKUP[imei.slice(0, 8)]
     if (tac) {
-      return tac
+      return {
+        record: tac,
+        proof: {
+          source: 'imei_tac',
+          identifierType: 'imei_tac',
+          identifierValue: imei.slice(0, 8),
+          confidence: 'family',
+        } satisfies LookupProof,
+      }
     }
   }
 
@@ -198,13 +230,20 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
   const barcodeUpc = barcodeValues.find((value) => /^\d{8,14}$/.test(value))
   const upc = labelledUpc || barcodeUpc
 
-  const lookupRecord = lookupFromIdentifiers(upc, imeis, serialNumber)
+  const lookupMatch = lookupFromIdentifiers(upc, imeis, serialNumber)
+  const lookupRecord = lookupMatch?.record
 
   const notes: string[] = []
 
   if ((imeis.length || serialNumber || upc) && !lookupRecord) {
     notes.push(
       'Identifiers were found, but no metadata lookup matched them yet. Add a TAC/GTIN/product database to resolve model details.',
+    )
+  }
+
+  if (lookupMatch?.proof.confidence === 'family') {
+    notes.push(
+      'This metadata came from IMEI TAC only, so it identifies the phone family/model but not the exact retail variant.',
     )
   }
 
@@ -226,6 +265,7 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
     imeis,
     eids,
     upc,
+    lookupProof: lookupMatch?.proof,
     notes,
     rawLines: normalizedText
       .split('\n')

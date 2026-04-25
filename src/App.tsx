@@ -8,6 +8,21 @@ const EMPTY_PROGRESS: ScanProgress = {
   value: 0,
 }
 
+function formatLookupSource(source?: string) {
+  switch (source) {
+    case 'exact_upc':
+      return 'Exact UPC match'
+    case 'exact_imei':
+      return 'Exact IMEI match'
+    case 'exact_serial':
+      return 'Exact serial match'
+    case 'imei_tac':
+      return 'IMEI TAC match'
+    default:
+      return 'No lookup match'
+  }
+}
+
 function App() {
   const cameraInputId = useId()
   const uploadInputId = useId()
@@ -72,6 +87,7 @@ function App() {
   }
 
   const metadata = scanResult?.parsed
+  const lookupProof = metadata?.lookupProof
   const primaryFields = [
     {
       label: 'Suggested stock name',
@@ -249,6 +265,17 @@ function App() {
             {metadata?.displayName ? (
               <span className="chip accent">{metadata.displayName}</span>
             ) : null}
+          </div>
+
+          <div className="info-grid compact">
+            <div className="mini-card">
+              <p className="mini-label">Lookup source</p>
+              <p>{formatLookupSource(lookupProof?.source)}</p>
+            </div>
+            <div className="mini-card">
+              <p className="mini-label">Matched identifier</p>
+              <p>{lookupProof ? `${lookupProof.identifierType}: ${lookupProof.identifierValue}` : '-'}</p>
+            </div>
           </div>
 
           <div className="field-grid">

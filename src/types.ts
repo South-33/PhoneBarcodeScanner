@@ -8,6 +8,13 @@ export type BarcodeMatch = {
   rawValue: string
 }
 
+export type LookupProof = {
+  source: 'exact_upc' | 'exact_imei' | 'exact_serial' | 'imei_tac'
+  identifierType: 'upc' | 'imei' | 'serial' | 'imei_tac'
+  identifierValue: string
+  confidence: 'exact' | 'family'
+}
+
 export type ParsedPhoneMetadata = {
   displayName?: string
   brand?: string
@@ -21,6 +28,7 @@ export type ParsedPhoneMetadata = {
   imeis: string[]
   eids: string[]
   upc?: string
+  lookupProof?: LookupProof
   notes: string[]
   rawLines: string[]
 }
