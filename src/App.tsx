@@ -18,6 +18,10 @@ function formatLookupSource(source?: string) {
       return 'Exact serial match'
     case 'imei_tac':
       return 'IMEI TAC match'
+    case 'exact_model_code':
+      return 'Exact model-code match'
+    case 'model_code_family':
+      return 'Model-code family match'
     default:
       return 'No lookup match'
   }

@@ -9,8 +9,14 @@ export type BarcodeMatch = {
 }
 
 export type LookupProof = {
-  source: 'exact_upc' | 'exact_imei' | 'exact_serial' | 'imei_tac'
-  identifierType: 'upc' | 'imei' | 'serial' | 'imei_tac'
+  source:
+    | 'exact_upc'
+    | 'exact_imei'
+    | 'exact_serial'
+    | 'imei_tac'
+    | 'exact_model_code'
+    | 'model_code_family'
+  identifierType: 'upc' | 'imei' | 'serial' | 'imei_tac' | 'model_code'
   identifierValue: string
   confidence: 'exact' | 'family'
 }

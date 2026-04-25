@@ -9,7 +9,12 @@ type LookupRecord = {
   modelNumber?: string
 }
 
-const IMEI_PATTERN = /\bIMEI(?:\/MEID)?[:\s-]*([0-9 ]{14,22})/gi
+type ModelCodeRule = {
+  brand: string
+  pattern: RegExp
+}
+
+const IMEI_PATTERN = /\bIMEI?(?:\/MEID)?[:\s-]*([0-9 ]{14,22})/gi
 const SERIAL_PATTERN =
   /\b(?:Serial(?:\s*(?:No\.?|Number))?|S\/N|SN)\b[^A-Z0-9]{0,8}([A-Z0-9-]{6,24})/gi
 const EID_PATTERN = /\bEID\b[^0-9]{0,8}([0-9 ]{16,40})/gi
@@ -64,6 +69,27 @@ const EXACT_SERIAL_LOOKUP: Record<string, LookupRecord> = {
     modelNumber: 'A2221',
   },
 }
+
+const EXACT_MODEL_CODE_LOOKUP: Record<string, LookupRecord> = {
+  'SM-R925F': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy Watch5 Pro LTE (45mm)',
+    modelNumber: 'SM-R925F',
+  },
+}
+
+const MODEL_CODE_RULES: ModelCodeRule[] = [
+  { brand: 'Samsung', pattern: /\bSM-[A-Z0-9]{4,8}(?:\/[A-Z0-9]{1,4})?\b/i },
+  { brand: 'Motorola', pattern: /\bXT\d{4,5}(?:-\d+)?\b/i },
+  { brand: 'realme', pattern: /\bRMX\d{4,5}\b/i },
+  { brand: 'OPPO', pattern: /\bCPH\d{4}\b/i },
+  { brand: 'vivo', pattern: /\bV\d{4,5}\b/i },
+  { brand: 'Sony', pattern: /\bXQ-[A-Z]{2}\d{2,4}\b/i },
+  { brand: 'Nokia', pattern: /\bTA-\d{4}\b/i },
+  { brand: 'Xiaomi', pattern: /\b\d{6,8}[A-Z]{1,4}\b/i },
+  { brand: 'Huawei', pattern: /\b[A-Z]{3,5}-[A-Z0-9]{2,5}\b/i },
+  { brand: 'Nothing', pattern: /\bA0\d{2}\b/i },
+]
 
 function uniqueValues(values: string[]) {
   return [...new Set(values.filter(Boolean))]
@@ -144,6 +170,18 @@ function preferLongestNumericValues(values: string[]) {
   return filtered
 }
 
+function collectFallbackEids(source: string, imeis: string[], upc?: string) {
+  const blocked = new Set([...imeis, upc].filter(Boolean))
+
+  return preferLongestNumericValues(
+    uniqueValues(
+      [...source.matchAll(/\b89\d{28,31}\b/g)]
+        .map((match) => match[0])
+        .filter((value) => !blocked.has(value)),
+    ),
+  )
+}
+
 function buildDisplayName(record?: LookupRecord) {
   if (!record?.deviceName) {
     return undefined
@@ -152,10 +190,33 @@ function buildDisplayName(record?: LookupRecord) {
   return [record.deviceName, record.color, record.storage].filter(Boolean).join(' ')
 }
 
+function extractModelCodes(source: string) {
+  const matches: string[] = []
+
+  for (const rule of MODEL_CODE_RULES) {
+    for (const match of source.matchAll(new RegExp(rule.pattern.source, 'gi'))) {
+      if (match[0]) {
+        matches.push(match[0].toUpperCase())
+      }
+    }
+  }
+
+  return uniqueValues(matches)
+}
+
+function lookupBrandFromModelCode(modelCode?: string) {
+  if (!modelCode) {
+    return undefined
+  }
+
+  return MODEL_CODE_RULES.find((rule) => rule.pattern.test(modelCode))?.brand
+}
+
 function lookupFromIdentifiers(
   upc?: string,
   imeis: string[] = [],
   serialNumber?: string,
+  modelCodes: string[] = [],
 ) {
   if (upc && EXACT_UPC_LOOKUP[upc]) {
     return {
@@ -211,17 +272,54 @@ function lookupFromIdentifiers(
     }
   }
 
+  for (const modelCode of modelCodes) {
+    const exact = EXACT_MODEL_CODE_LOOKUP[modelCode]
+    if (exact) {
+      return {
+        record: exact,
+        proof: {
+          source: 'exact_model_code',
+          identifierType: 'model_code',
+          identifierValue: modelCode,
+          confidence: 'exact',
+        } satisfies LookupProof,
+      }
+    }
+  }
+
+  for (const modelCode of modelCodes) {
+    const brand = lookupBrandFromModelCode(modelCode)
+    if (brand) {
+      const familyRecord: LookupRecord = {
+        brand,
+        modelNumber: modelCode,
+        deviceName: modelCode,
+      }
+
+      return {
+        record: familyRecord,
+        proof: {
+          source: 'model_code_family',
+          identifierType: 'model_code',
+          identifierValue: modelCode,
+          confidence: 'family',
+        } satisfies LookupProof,
+      }
+    }
+  }
+
   return undefined
 }
 
 export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
   const normalizedText = normalizeText(rawText)
   const barcodeValues = uniqueValues(barcodes.map((barcode) => barcode.rawValue.trim()))
+  const modelCodes = extractModelCodes(normalizedText)
 
   const imeis = preferLongestNumericValues(
     collectMatches(IMEI_PATTERN, normalizedText, normalizeImei),
   )
-  const eids = preferLongestNumericValues(
+  let eids = preferLongestNumericValues(
     collectMatches(EID_PATTERN, normalizedText, normalizeEid),
   )
   const serialNumber = collectMatches(SERIAL_PATTERN, normalizedText, normalizeSerial)[0]
@@ -230,7 +328,11 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
   const barcodeUpc = barcodeValues.find((value) => /^\d{8,14}$/.test(value))
   const upc = labelledUpc || barcodeUpc
 
-  const lookupMatch = lookupFromIdentifiers(upc, imeis, serialNumber)
+  if (!eids.length) {
+    eids = collectFallbackEids(normalizedText, imeis, upc)
+  }
+
+  const lookupMatch = lookupFromIdentifiers(upc, imeis, serialNumber, modelCodes)
   const lookupRecord = lookupMatch?.record
 
   const notes: string[] = []
@@ -241,7 +343,13 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
     )
   }
 
-  if (lookupMatch?.proof.confidence === 'family') {
+  if (lookupMatch?.proof.source === 'model_code_family') {
+    notes.push(
+      'This result came from a generic model-code family match. Brand and model number are reliable, but retail variant details are still unknown.',
+    )
+  }
+
+  if (lookupMatch?.proof.source === 'imei_tac') {
     notes.push(
       'This metadata came from IMEI TAC only, so it identifies the phone family/model but not the exact retail variant.',
     )
@@ -260,7 +368,7 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
     storage: lookupRecord?.storage,
     color: lookupRecord?.color,
     skuCode: lookupRecord?.skuCode,
-    modelNumber: lookupRecord?.modelNumber,
+    modelNumber: lookupRecord?.modelNumber || modelCodes[0],
     serialNumber,
     imeis,
     eids,

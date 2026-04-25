@@ -3,6 +3,7 @@ This is the project's AGENTS.md
 ## Notes
 - Demo scope -> keep v1 browser-only with file capture/upload, `tesseract.js`, and optional `BarcodeDetector`; live camera streams or server OCR add setup friction without helping the showcase.
 - Code-only mode -> do not derive device name, storage, or color from the printed product line; only show metadata that resolves from IMEI/serial/GTIN lookup data.
+- Model-code path -> support major brand identifier formats (`SM-`, `XT`, `RMX`, `CPH`, `V`, `XQ-`, `TA-`, Xiaomi numeric codes, etc.); when exact catalog data is missing, fall back to brand + model code with family-level proof.
 - Android variant lines -> parse RAM and storage separately; labels like `8GB+256GB` or `12GB/512GB` should not treat the first capacity as storage.
 - OCR quality -> the image preprocessing in `src/lib/imageTools.ts` matters; glare on shrink-wrap and wide shots are the main failure modes to fix before changing parsing rules.
 - Docs -> Apple confirms iPhone packaging includes serial, EID, and IMEI/MEID on the box: https://support.apple.com/en-us/108037
