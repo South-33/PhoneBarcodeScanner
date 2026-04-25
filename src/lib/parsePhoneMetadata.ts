@@ -1,22 +1,34 @@
 import type { BarcodeMatch, ParsedPhoneMetadata } from '../types'
 
 const STORAGE_PATTERN =
-  /\b(?:2TB|1TB|512GB|256GB|128GB|64GB|32GB|16GB|8GB)\b/i
+  /\b(?:2TB|1TB|512GB|256GB|128GB|64GB|32GB|16GB)\b/i
 
 const COLOR_OPTIONS = [
   'Natural Titanium',
   'Desert Titanium',
   'White Titanium',
   'Black Titanium',
+  'Titanium Black',
+  'Titanium Gray',
+  'Titanium Violet',
+  'Titanium Yellow',
+  'Titanium Blue',
+  'Titanium Green',
   'Rose Gold',
   'Space Black',
   'Space Gray',
   'Phantom Black',
   'Phantom White',
-  'Titanium Black',
-  'Titanium Gray',
-  'Titanium Violet',
-  'Titanium Yellow',
+  'Phantom Silver',
+  'Phantom Violet',
+  'Awesome Black',
+  'Awesome Blue',
+  'Awesome Graphite',
+  'Awesome Iceblue',
+  'Awesome Lime',
+  'Awesome Lilac',
+  'Awesome Navy',
+  'Awesome White',
   'Sky Blue',
   'Sierra Blue',
   'Pacific Blue',
@@ -27,12 +39,31 @@ const COLOR_OPTIONS = [
   'Obsidian',
   'Porcelain',
   'Lemongrass',
-  'Lavender',
-  'Coral',
+  'Wintergreen',
+  'Sorta Sunny',
+  'Sorta Seafoam',
+  'Bay',
+  'Mint',
   'Hazel',
+  'Coral',
+  'Lavender',
   'Cream',
-  'Silver',
-  'Gold',
+  'Silky Black',
+  'Flowy Emerald',
+  'Glacial Green',
+  'Cool Blue',
+  'Celadon Marble',
+  'Silk White',
+  'Nebula Blue',
+  'Moonstone Gray',
+  'Astral Black',
+  'Sunset Dune',
+  'Cosmic Black',
+  'Aurora Green',
+  'Andaman Blue',
+  'Navigator Beige',
+  'Dark Gray',
+  'Light Green',
   'Blue',
   'Green',
   'Black',
@@ -42,13 +73,16 @@ const COLOR_OPTIONS = [
   'Yellow',
   'Gray',
   'Grey',
+  'Silver',
+  'Gold',
   'Red',
   'Orange',
   'Beige',
 ]
 
 const COLOR_PATTERN = new RegExp(
-  `\\b(${COLOR_OPTIONS.sort((left, right) => right.length - left.length)
+  `\\b(${[...COLOR_OPTIONS]
+    .sort((left, right) => right.length - left.length)
     .map(escapeRegExp)
     .join('|')})\\b`,
   'i',
@@ -57,34 +91,52 @@ const COLOR_PATTERN = new RegExp(
 const BRAND_RULES = [
   { brand: 'Apple', pattern: /\biPhone\b/i },
   { brand: 'Samsung', pattern: /\b(?:Samsung|Galaxy)\b/i },
-  { brand: 'Google', pattern: /\bPixel\b/i },
+  { brand: 'Google', pattern: /\b(?:Google\s+)?Pixel\b/i },
   { brand: 'Xiaomi', pattern: /\b(?:Xiaomi|Redmi|POCO)\b/i },
-  { brand: 'OnePlus', pattern: /\bOnePlus\b/i },
-  { brand: 'OPPO', pattern: /\bOPPO\b/i },
-  { brand: 'vivo', pattern: /\bvivo\b/i },
+  { brand: 'OnePlus', pattern: /\b(?:OnePlus|Nord)\b/i },
+  { brand: 'OPPO', pattern: /\b(?:OPPO|Reno|Find\s+[NX])\b/i },
+  { brand: 'vivo', pattern: /\b(?:vivo|iQOO)\b/i },
   { brand: 'realme', pattern: /\brealme\b/i },
-  { brand: 'Motorola', pattern: /\b(?:Motorola|moto)\b/i },
-  { brand: 'Nothing', pattern: /\bNothing\b/i },
-  { brand: 'Huawei', pattern: /\bHuawei\b/i },
-  { brand: 'Honor', pattern: /\bHonor\b/i },
+  { brand: 'Motorola', pattern: /\b(?:Motorola|moto|razr|edge)\b/i },
+  { brand: 'Nothing', pattern: /\bNothing(?:\s+Phone)?\b/i },
+  { brand: 'Huawei', pattern: /\b(?:Huawei|Pura|Mate)\b/i },
+  { brand: 'Honor', pattern: /\b(?:Honor|Magic)\b/i },
   { brand: 'Sony', pattern: /\bXperia\b/i },
   { brand: 'Nokia', pattern: /\bNokia\b/i },
 ]
 
 const PRODUCT_KEYWORDS =
-  /\b(?:iPhone|Galaxy|Pixel|Redmi|POCO|Xiaomi|OnePlus|OPPO|vivo|realme|motorola|moto|Nothing|Xperia|Nokia)\b/i
+  /\b(?:iPhone|Galaxy|Pixel|Redmi|POCO|Xiaomi|OnePlus|Nord|OPPO|Reno|Find\s+[NX]|vivo|iQOO|realme|motorola|moto|razr|edge|Nothing(?:\s+Phone)?|Huawei|Honor|Magic|Xperia|Nokia)\b/i
 
 const IGNORE_LINE_PATTERN =
-  /\b(?:designed|assembled|other items|apple inc|copyright|california|china|imei|meid|serial|eid|upc|barcode|recycle|ce\b|fcc\b|model\s*a?\d{3,5})\b/i
+  /\b(?:designed|assembled|other items|apple inc|copyright|california|china|imei|meid|serial|eid|upc|ean|gtin|barcode|recycle|made in|manufactured|imported|address|support|warranty|rated|voltage|fcc\b|ce\b|ukca|bis\b|rohs\b)\b/i
 
-const IMEI_PATTERN = /\bIMEI(?:\/MEID)?\b[^0-9]{0,6}([0-9 ]{14,22})/gi
+const IMEI_PATTERN = /\bIMEI(?:\s*\d|\/MEID)?\b[^0-9]{0,8}([0-9 ]{14,22})/gi
 const SERIAL_PATTERN =
-  /\b(?:Serial(?:\s*(?:No\.?|Number))?|S\/N|SN)\b[^A-Z0-9]{0,8}([A-Z0-9-]{6,20})/gi
+  /\b(?:Serial(?:\s*(?:No\.?|Number))?|S\/N|SN)\b[^A-Z0-9]{0,8}([A-Z0-9-]{6,24})/gi
 const MODEL_PATTERN =
-  /\bModel(?:\s*(?:No\.?|Number))?\b[^A-Z0-9]{0,8}([A-Z0-9-]{3,20})/gi
-const EID_PATTERN = /\bEID\b[^0-9]{0,6}([0-9 ]{16,40})/gi
+  /\bModel(?:\s*(?:No\.?|Number))?\b[^A-Z0-9]{0,8}([A-Z0-9-]{3,24})/gi
+const EID_PATTERN = /\bEID\b[^0-9]{0,8}([0-9 ]{16,40})/gi
 const UPC_PATTERN =
-  /\b(?:UPC|EAN|GTIN)\b[^0-9]{0,6}([0-9 ]{8,18})\b/gi
+  /\b(?:UPC|EAN|GTIN)\b[^0-9]{0,8}([0-9 ]{8,18})\b/gi
+
+const MODEL_CODE_PATTERNS = [
+  /\bSM-[A-Z0-9]{4,8}(?:\/[A-Z0-9]{1,4})?\b/i,
+  /\bXT\d{4,5}-\d\b/i,
+  /\bRMX\d{4,5}\b/i,
+  /\bCPH\d{4}\b/i,
+  /\bV\d{4,5}\b/i,
+  /\bA0\d{2,3}\b/i,
+  /\bXQ-[A-Z]{2}\d{2,4}\b/i,
+  /\b[A-Z]{2,5}-[A-Z0-9]{2,6}\b/i,
+  /\b\d{5,}[A-Z]{2,}\d*[A-Z]?\b/,
+]
+
+const SKU_PATTERNS = [
+  /\bM[A-Z0-9]{4,}\/[A-Z0-9]{1,4}\b/i,
+  /\bGA0\d{4,}(?:-[A-Z]{2,4})?\b/i,
+  /\b[A-Z]{2,5}-[A-Z0-9]{2,6}\b/i,
+]
 
 function escapeRegExp(input: string) {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -111,22 +163,29 @@ function normalizeText(input: string) {
     input
       .replace(/\r/g, '\n')
       .replace(/[|]/g, 'I')
-      .replace(/[“”]/g, '"')
-      .replace(/[‘’]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
       .replace(/[^\S\n]+/g, ' ')
       .trim(),
   )
 }
 
 function cleanLine(line: string) {
-  return line.replace(/\s{2,}/g, ' ').replace(/^[\s,.;:/\\-]+|[\s,.;:/\\-]+$/g, '').trim()
+  return line
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s,.;:/\\-]+|[\s,.;:/\\-]+$/g, '')
+    .trim()
 }
 
 function normalizeDigits(value: string) {
   return value.replace(/\D/g, '')
 }
 
-function collectMatches(pattern: RegExp, source: string, cleaner: (value: string) => string) {
+function collectMatches(
+  pattern: RegExp,
+  source: string,
+  cleaner: (value: string) => string,
+) {
   const matches: string[] = []
 
   for (const match of source.matchAll(pattern)) {
@@ -147,12 +206,42 @@ function inferBrand(input?: string) {
   return BRAND_RULES.find((rule) => rule.pattern.test(input))?.brand
 }
 
-function findStorage(input: string) {
-  return input.match(STORAGE_PATTERN)?.[0]?.toUpperCase()
-}
-
 function findColor(input: string) {
   return input.match(COLOR_PATTERN)?.[0]
+}
+
+function extractCapacityPair(input: string) {
+  const matches = [
+    ...input.matchAll(/\b(\d{1,2}GB)\s*(?:RAM)?\s*[+/]\s*(\d{2,4}GB|1TB|2TB)\b/gi),
+  ]
+
+  const first = matches[0]
+  if (!first) {
+    return {}
+  }
+
+  return {
+    memory: first[1]?.toUpperCase(),
+    storage: first[2]?.toUpperCase(),
+  }
+}
+
+function findMemory(input: string) {
+  return (
+    extractCapacityPair(input).memory ||
+    input.match(/\b(?:RAM|Memory)\s*[:-]?\s*(24GB|18GB|16GB|12GB|8GB|6GB|4GB|3GB|2GB)\b/i)?.[1]?.toUpperCase() ||
+    input.match(/\b(24GB|18GB|16GB|12GB|8GB|6GB|4GB|3GB|2GB)\s*RAM\b/i)?.[1]?.toUpperCase() ||
+    undefined
+  )
+}
+
+function findStorage(input: string) {
+  return (
+    extractCapacityPair(input).storage ||
+    input.match(/\b(?:ROM|Storage|Internal Storage)\s*[:-]?\s*(2TB|1TB|512GB|256GB|128GB|64GB|32GB|16GB)\b/i)?.[1]?.toUpperCase() ||
+    input.match(STORAGE_PATTERN)?.[0]?.toUpperCase() ||
+    undefined
+  )
 }
 
 function findSkuCode(line?: string) {
@@ -160,15 +249,43 @@ function findSkuCode(line?: string) {
     return undefined
   }
 
-  const match = line.match(
-    /^([A-Z0-9-]{4,}(?:\/[A-Z0-9]{1,4})?)\s+(?=[A-Za-z])/,
-  )
+  for (const pattern of SKU_PATTERNS) {
+    const match = line.match(pattern)
+    if (match?.[0]) {
+      return match[0]
+    }
+  }
 
-  if (!match || !/[A-Z]/.test(match[1]) || !/\d/.test(match[1])) {
+  const leadingCode = line.match(/^([A-Z0-9-]{4,}(?:\/[A-Z0-9]{1,4})?)\s+(?=[A-Za-z])/)
+  if (!leadingCode || !/[A-Z]/.test(leadingCode[1]) || !/\d/.test(leadingCode[1])) {
     return undefined
   }
 
-  return match[1]
+  return leadingCode[1]
+}
+
+function findModelCode(source: string, brand?: string) {
+  const labelled = collectMatches(MODEL_PATTERN, source, cleanLine)[0]
+  if (labelled) {
+    return labelled
+  }
+
+  const lines = source.split('\n')
+  for (const line of lines) {
+    const hasBrandContext = !brand || inferBrand(line) === brand
+    if (!hasBrandContext && !/model/i.test(line)) {
+      continue
+    }
+
+    for (const pattern of MODEL_CODE_PATTERNS) {
+      const match = line.match(pattern)
+      if (match?.[0]) {
+        return match[0]
+      }
+    }
+  }
+
+  return undefined
 }
 
 function scoreProductLine(line: string) {
@@ -186,11 +303,11 @@ function scoreProductLine(line: string) {
     score += 4
   }
 
-  if (findColor(line)) {
-    score += 2
+  if (findMemory(line)) {
+    score += 3
   }
 
-  if (line.includes(',')) {
+  if (findColor(line)) {
     score += 2
   }
 
@@ -198,8 +315,12 @@ function scoreProductLine(line: string) {
     score += 2
   }
 
+  if (line.includes(',')) {
+    score += 1
+  }
+
   const digits = (line.match(/\d/g) ?? []).length
-  if (digits / Math.max(line.length, 1) > 0.45) {
+  if (digits / Math.max(line.length, 1) > 0.5) {
     score -= 4
   }
 
@@ -228,41 +349,81 @@ function stripVariant(input: string, values: Array<string | undefined>) {
   }, input)
 }
 
-function extractDeviceName(line?: string, skuCode?: string, color?: string, storage?: string) {
+function normalizeBrandPrefixes(input: string, brand?: string) {
+  if (!brand) {
+    return input
+  }
+
+  switch (brand) {
+    case 'Google':
+      return input.replace(/\bGoogle\s+(?=Pixel\b)/i, '').trim()
+    case 'Motorola':
+      return input.replace(/\bMotorola\s+/i, '').trim()
+    default:
+      return input
+  }
+}
+
+function extractDeviceName(
+  line?: string,
+  brand?: string,
+  skuCode?: string,
+  color?: string,
+  memory?: string,
+  storage?: string,
+) {
   if (!line) {
     return undefined
   }
 
   let workingLine = line
 
-  if (skuCode && workingLine.startsWith(`${skuCode} `)) {
-    workingLine = workingLine.slice(skuCode.length).trim()
+  if (skuCode) {
+    workingLine = workingLine.replace(new RegExp(`^${escapeRegExp(skuCode)}\\s+`, 'i'), '')
   }
+
+  workingLine = workingLine
+    .replace(/\b(?:Unlocked|Dual SIM|Dual-SIM|5G|4G|RAM|ROM|Global Version|International Version)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
 
   const commaSegments = workingLine
     .split(',')
     .map((segment) => cleanLine(segment))
     .filter(Boolean)
 
-  if (commaSegments.length > 1) {
-    const firstSegment = commaSegments[0] ?? ''
-    return stripVariant(firstSegment, [color, storage]) || firstSegment
-  }
+  const baseLine = commaSegments[0] ?? workingLine
+  const stripped = stripVariant(baseLine, [color, memory, storage])
+  const normalized = normalizeBrandPrefixes(stripped || baseLine, brand)
 
-  const stripped = stripVariant(workingLine, [color, storage])
-    .replace(/\b(?:Unlocked|Dual SIM|Dual-SIM|5G)\b/gi, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-
-  return stripped || workingLine
+  return normalized || undefined
 }
 
-function buildDisplayName(deviceName?: string, color?: string, storage?: string) {
+function buildDisplayName(
+  deviceName?: string,
+  color?: string,
+  memory?: string,
+  storage?: string,
+) {
   if (!deviceName) {
     return undefined
   }
 
-  return [deviceName, color, storage].filter(Boolean).join(' ')
+  const capacityPart =
+    memory && storage ? `${memory}/${storage}` : storage || memory
+
+  return [deviceName, color, capacityPart].filter(Boolean).join(' ')
+}
+
+function findFallbackSku(lines: string[]) {
+  for (const line of lines) {
+    const value = findSkuCode(line)
+    if (value) {
+      return value
+    }
+  }
+
+  return undefined
 }
 
 export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
@@ -274,15 +435,11 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
       .filter((line) => line.length >= 3),
   )
 
-  const barcodeValues = uniqueValues(
-    barcodes.map((barcode) => barcode.rawValue.trim()),
-  )
-
+  const barcodeValues = uniqueValues(barcodes.map((barcode) => barcode.rawValue.trim()))
   const joinedText = rawLines.join('\n')
 
   const imeis = collectMatches(IMEI_PATTERN, joinedText, normalizeDigits)
   const eids = collectMatches(EID_PATTERN, joinedText, normalizeDigits)
-  const modelNumber = collectMatches(MODEL_PATTERN, joinedText, cleanLine)[0]
   const serialNumber = collectMatches(SERIAL_PATTERN, joinedText, cleanLine)[0]
 
   const labelledUpc = collectMatches(UPC_PATTERN, joinedText, normalizeDigits)[0]
@@ -290,20 +447,27 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
   const upc = labelledUpc || barcodeUpc
 
   const productLine = pickProductLine(rawLines)
-  const skuCode =
-    findSkuCode(productLine) ||
-    rawLines.map(findSkuCode).find(Boolean)
-  const storage =
-    findStorage(productLine ?? '') || findStorage(rawLines.join(' '))
-  const color = findColor(productLine ?? '') || findColor(rawLines.join(' '))
-  const deviceName = extractDeviceName(productLine, skuCode, color, storage)
-  const brand = inferBrand(deviceName || productLine)
+  const preBrand = inferBrand(productLine || joinedText)
+  const skuCode = findSkuCode(productLine) || findFallbackSku(rawLines)
+  const memory = findMemory(productLine ?? '') || findMemory(joinedText)
+  const storage = findStorage(productLine ?? '') || findStorage(joinedText)
+  const color = findColor(productLine ?? '') || findColor(joinedText)
+  const deviceName = extractDeviceName(
+    productLine,
+    preBrand,
+    skuCode,
+    color,
+    memory,
+    storage,
+  )
+  const brand = inferBrand(deviceName || productLine || joinedText)
+  const modelNumber = findModelCode(joinedText, brand)
 
   const notes: string[] = []
 
   if (!deviceName && upc) {
     notes.push(
-      'UPC can identify the item, but clean sales metadata still needs OCR text or a lookup database.',
+      'UPC can identify the item, but the clean stock name still usually comes from OCR text or a lookup database.',
     )
   }
 
@@ -313,10 +477,17 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
     )
   }
 
+  if (!storage && memory) {
+    notes.push(
+      'This label looks like an Android variant line. RAM was found, but storage was not confidently separated.',
+    )
+  }
+
   const metadata: ParsedPhoneMetadata = {
-    displayName: buildDisplayName(deviceName, color, storage),
+    displayName: buildDisplayName(deviceName, color, memory, storage),
     brand,
     deviceName,
+    memory,
     storage,
     color,
     skuCode,

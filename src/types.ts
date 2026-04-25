@@ -12,6 +12,7 @@ export type ParsedPhoneMetadata = {
   displayName?: string
   brand?: string
   deviceName?: string
+  memory?: string
   storage?: string
   color?: string
   skuCode?: string

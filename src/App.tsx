@@ -86,6 +86,10 @@ function App() {
       value: metadata?.deviceName,
     },
     {
+      label: 'Memory / RAM',
+      value: metadata?.memory,
+    },
+    {
       label: 'Storage',
       value: metadata?.storage,
     },
@@ -229,8 +233,9 @@ function App() {
             <div className="mini-card">
               <p className="mini-label">Current demo scope</p>
               <p>
-                Strongest on iPhone-style labels now, with generic parsing for Samsung,
-                Pixel, Xiaomi, OnePlus, OPPO, vivo, realme, Motorola, Nothing, and more.
+                Tuned for iPhone plus common Android box labels from Samsung, Pixel,
+                Xiaomi, OnePlus, OPPO, vivo, realme, Motorola, Nothing, Huawei, Honor,
+                Sony, and Nokia.
               </p>
             </div>
           </div>
@@ -242,14 +247,16 @@ function App() {
               <p className="panel-kicker">Structured output</p>
               <h2>Ready to paste into stock entry</h2>
             </div>
-            {metadata?.displayName ? <span className="chip accent">{metadata.displayName}</span> : null}
+            {metadata?.displayName ? (
+              <span className="chip accent">{metadata.displayName}</span>
+            ) : null}
           </div>
 
           <div className="field-grid">
             {primaryFields.map((field) => (
               <div className="field-card" key={field.label}>
                 <p className="field-label">{field.label}</p>
-                <p className="field-value">{field.value || '—'}</p>
+                <p className="field-value">{field.value || '-'}</p>
               </div>
             ))}
           </div>
