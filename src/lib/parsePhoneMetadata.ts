@@ -14,6 +14,14 @@ type ModelCodeRule = {
   pattern: RegExp
 }
 
+type BarcodeIdentifierGuess = {
+  imeis: string[]
+  eids: string[]
+  upc?: string
+  serials: string[]
+  modelCodes: string[]
+}
+
 const IMEI_PATTERN = /\bIMEI?(?:\/MEID)?[:\s-]*([0-9 ]{14,22})/gi
 const SERIAL_PATTERN =
   /\b(?:Serial(?:\s*(?:No\.?|Number))?|S\/N|SN)\b[^A-Z0-9]{0,8}([A-Z0-9-]{6,24})/gi
@@ -57,6 +65,11 @@ const IMEI_TAC_LOOKUP: Record<string, LookupRecord> = {
     deviceName: 'iPhone 11',
     modelNumber: 'A2221',
   },
+  '35187676': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy Watch5 Pro LTE (45mm)',
+    modelNumber: 'SM-R925F',
+  },
 }
 
 const EXACT_SERIAL_LOOKUP: Record<string, LookupRecord> = {
@@ -96,7 +109,10 @@ function uniqueValues(values: string[]) {
 }
 
 function normalizeDigits(value: string) {
-  return value.replace(/\D/g, '')
+  return value
+    .replace(/[OQ]/gi, '0')
+    .replace(/[Il|]/g, '1')
+    .replace(/\D/g, '')
 }
 
 function normalizeImei(value: string) {
@@ -136,6 +152,68 @@ function normalizeText(input: string) {
     .replace(/\bEID(?=\d)/gi, 'EID ')
     .replace(/\bSerial(?=[A-Z0-9])/gi, 'Serial ')
     .trim()
+}
+
+function isValidLuhn(value: string) {
+  let sum = 0
+  let shouldDouble = false
+
+  for (let index = value.length - 1; index >= 0; index -= 1) {
+    let digit = Number.parseInt(value[index] ?? '', 10)
+    if (Number.isNaN(digit)) {
+      return false
+    }
+
+    if (shouldDouble) {
+      digit *= 2
+      if (digit > 9) {
+        digit -= 9
+      }
+    }
+
+    sum += digit
+    shouldDouble = !shouldDouble
+  }
+
+  return sum % 10 === 0
+}
+
+function isValidImei(value: string) {
+  return /^\d{15}$/.test(value) && isValidLuhn(value)
+}
+
+function hasValidGs1CheckDigit(value: string) {
+  const digits = value.split('').map((digit) => Number.parseInt(digit, 10))
+
+  if (digits.some(Number.isNaN)) {
+    return false
+  }
+
+  const checkDigit = digits.pop()
+  if (checkDigit === undefined) {
+    return false
+  }
+
+  const sum = digits
+    .reverse()
+    .reduce(
+      (total, digit, index) => total + digit * (index % 2 === 0 ? 3 : 1),
+      0,
+    )
+
+  return (10 - (sum % 10 || 10)) % 10 === checkDigit
+}
+
+function isValidUpcOrEan(value: string) {
+  return /^\d{12,13}$/.test(value) && hasValidGs1CheckDigit(value)
+}
+
+function isValidEid(value: string) {
+  return /^89\d{30}$/.test(value)
+}
+
+function isLikelySerial(value: string) {
+  return /^[A-Z0-9-]{8,24}$/.test(value) && /[A-Z]/.test(value) && /\d/.test(value)
 }
 
 function collectMatches(
@@ -180,6 +258,39 @@ function collectFallbackEids(source: string, imeis: string[], upc?: string) {
         .filter((value) => !blocked.has(value)),
     ),
   )
+}
+
+function guessIdentifiersFromBarcode(rawValue: string): BarcodeIdentifierGuess {
+  const trimmed = rawValue.trim()
+  const digits = normalizeDigits(trimmed)
+  const normalizedToken = normalizeSerial(trimmed)
+
+  const result: BarcodeIdentifierGuess = {
+    imeis: [],
+    eids: [],
+    serials: [],
+    modelCodes: [],
+  }
+
+  if (isValidEid(digits)) {
+    result.eids.push(digits)
+  }
+
+  if (isValidImei(digits)) {
+    result.imeis.push(digits)
+  }
+
+  if (isValidUpcOrEan(digits)) {
+    result.upc = digits
+  }
+
+  if (isLikelySerial(normalizedToken) && !result.imeis.includes(normalizedToken)) {
+    result.serials.push(normalizedToken)
+  }
+
+  result.modelCodes = extractModelCodes(trimmed)
+
+  return result
 }
 
 function buildDisplayName(record?: LookupRecord) {
@@ -257,21 +368,6 @@ function lookupFromIdentifiers(
     }
   }
 
-  for (const imei of imeis) {
-    const tac = IMEI_TAC_LOOKUP[imei.slice(0, 8)]
-    if (tac) {
-      return {
-        record: tac,
-        proof: {
-          source: 'imei_tac',
-          identifierType: 'imei_tac',
-          identifierValue: imei.slice(0, 8),
-          confidence: 'family',
-        } satisfies LookupProof,
-      }
-    }
-  }
-
   for (const modelCode of modelCodes) {
     const exact = EXACT_MODEL_CODE_LOOKUP[modelCode]
     if (exact) {
@@ -282,6 +378,21 @@ function lookupFromIdentifiers(
           identifierType: 'model_code',
           identifierValue: modelCode,
           confidence: 'exact',
+        } satisfies LookupProof,
+      }
+    }
+  }
+
+  for (const imei of imeis) {
+    const tac = IMEI_TAC_LOOKUP[imei.slice(0, 8)]
+    if (tac) {
+      return {
+        record: tac,
+        proof: {
+          source: 'imei_tac',
+          identifierType: 'imei_tac',
+          identifierValue: imei.slice(0, 8),
+          confidence: 'family',
         } satisfies LookupProof,
       }
     }
@@ -314,22 +425,37 @@ function lookupFromIdentifiers(
 export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
   const normalizedText = normalizeText(rawText)
   const barcodeValues = uniqueValues(barcodes.map((barcode) => barcode.rawValue.trim()))
-  const modelCodes = extractModelCodes(normalizedText)
+  const barcodeGuesses = barcodeValues.map(guessIdentifiersFromBarcode)
+  const modelCodes = uniqueValues([
+    ...extractModelCodes(normalizedText),
+    ...barcodeGuesses.flatMap((guess) => guess.modelCodes),
+  ])
 
   const imeis = preferLongestNumericValues(
-    collectMatches(IMEI_PATTERN, normalizedText, normalizeImei),
+    uniqueValues([
+      ...collectMatches(IMEI_PATTERN, normalizedText, normalizeImei),
+      ...barcodeGuesses.flatMap((guess) => guess.imeis),
+    ]).filter(isValidImei),
   )
   let eids = preferLongestNumericValues(
-    collectMatches(EID_PATTERN, normalizedText, normalizeEid),
+    uniqueValues([
+      ...collectMatches(EID_PATTERN, normalizedText, normalizeEid),
+      ...barcodeGuesses.flatMap((guess) => guess.eids),
+    ]).filter(isValidEid),
   )
-  const serialNumber = collectMatches(SERIAL_PATTERN, normalizedText, normalizeSerial)[0]
+  const serialNumber =
+    collectMatches(SERIAL_PATTERN, normalizedText, normalizeSerial)[0] ||
+    uniqueValues(barcodeGuesses.flatMap((guess) => guess.serials))[0]
 
-  const labelledUpc = collectMatches(UPC_PATTERN, normalizedText, normalizeDigits)[0]
-  const barcodeUpc = barcodeValues.find((value) => /^\d{8,14}$/.test(value))
+  const labelledUpc = collectMatches(UPC_PATTERN, normalizedText, normalizeDigits)
+    .filter(isValidUpcOrEan)[0]
+  const barcodeUpc = barcodeGuesses.map((guess) => guess.upc).find(Boolean)
   const upc = labelledUpc || barcodeUpc
 
   if (!eids.length) {
     eids = collectFallbackEids(normalizedText, imeis, upc)
+      .map(normalizeEid)
+      .filter(isValidEid)
   }
 
   const lookupMatch = lookupFromIdentifiers(upc, imeis, serialNumber, modelCodes)

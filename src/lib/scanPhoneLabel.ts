@@ -1,5 +1,5 @@
-import { createWorker, PSM } from 'tesseract.js'
 import { buildSourceCanvas, createProcessedCanvas } from './imageTools'
+import { runOcrProvider } from './ocrProviders'
 import { parsePhoneMetadata } from './parsePhoneMetadata'
 import type { BarcodeMatch, PhoneLabelScanResult, ScanProgress } from '../types'
 
@@ -15,41 +15,6 @@ type NativeBarcodeDetector = {
 type NativeBarcodeDetectorConstructor = {
   new (options?: { formats?: string[] }): NativeBarcodeDetector
   getSupportedFormats(): Promise<string[]>
-}
-
-let workerPromise: Promise<Tesseract.Worker> | null = null
-let activeProgressListener: ((progress: ScanProgress) => void) | null = null
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max)
-}
-
-function formatStatus(status: string) {
-  return status
-    .split(/[_\s]+/)
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join(' ')
-}
-
-async function getWorker(progressListener?: (progress: ScanProgress) => void) {
-  activeProgressListener = progressListener ?? null
-
-  if (!workerPromise) {
-    workerPromise = createWorker('eng', 1, {
-      logger: (message) => {
-        if (!activeProgressListener) {
-          return
-        }
-
-        activeProgressListener({
-          label: `OCR: ${formatStatus(message.status)}`,
-          value: clamp(0.24 + message.progress * 0.58, 0.24, 0.86),
-        })
-      },
-    })
-  }
-
-  return workerPromise
 }
 
 async function detectBarcodes(canvas: HTMLCanvasElement): Promise<NativeBarcodeResult> {
@@ -119,13 +84,13 @@ function mergeWholeImageText(primaryText: string, secondaryText: string) {
   return merged.join('\n')
 }
 
-function needsFallbackPass(parsed: PhoneLabelScanResult['parsed']) {
-  return !(
-    parsed.deviceName &&
-    parsed.skuCode &&
-    parsed.modelNumber &&
-    (parsed.serialNumber || parsed.imeis.length || parsed.eids.length)
-  )
+function countDetectedIdentifiers(parsed: PhoneLabelScanResult['parsed']) {
+  return [
+    parsed.imeis.length,
+    parsed.eids.length,
+    parsed.upc ? 1 : 0,
+    parsed.serialNumber ? 1 : 0,
+  ].reduce((total, count) => total + count, 0)
 }
 
 export async function scanPhoneLabel(
@@ -154,49 +119,43 @@ export async function scanPhoneLabel(
     value: 0.16,
   })
 
-  const barcodePromise = detectBarcodes(sourceCanvas)
-  const worker = await getWorker(emitProgress)
+  const barcodeResult = await detectBarcodes(sourceCanvas)
+  const barcodeOnlyParse = parsePhoneMetadata('', barcodeResult.barcodes)
+  const barcodeIdentifierCount = countDetectedIdentifiers(barcodeOnlyParse.metadata)
 
-  await worker.setParameters({
-    tessedit_pageseg_mode: PSM.SPARSE_TEXT,
-    preserve_interword_spaces: '1',
-    user_defined_dpi: '300',
-    tessedit_char_whitelist:
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-(),.+',
-  })
+  if (barcodeIdentifierCount >= 2 || barcodeOnlyParse.metadata.lookupProof) {
+    const barcodeTranscript = barcodeResult.barcodes.map((barcode) => barcode.rawValue).join('\n')
 
-  emitProgress({
-    label: 'Running OCR',
-    value: 0.22,
-  })
+    emitProgress({
+      label: 'Using barcode hits directly',
+      value: 0.94,
+    })
 
-  const [generalResult, barcodeResult] = await Promise.all([
-    worker.recognize(generalCanvas),
-    barcodePromise,
-  ])
+    emitProgress({
+      label: 'Scan finished',
+      value: 1,
+    })
+
+    return {
+      rawText: barcodeTranscript,
+      normalizedText: barcodeTranscript,
+      ocrConfidence: 0,
+      ocrProvider: 'none',
+      barcodes: barcodeResult.barcodes,
+      barcodeDetectorSupported: barcodeResult.supported,
+      parsed: barcodeOnlyParse.metadata,
+    }
+  }
+
+  const ocrResult = await runOcrProvider(generalCanvas, sourceCanvas, emitProgress)
 
   emitProgress({
     label: 'Extracting fields from OCR text',
     value: 0.92,
   })
 
-  let mergedText = generalResult.data.text
-  let parsed = parsePhoneMetadata(mergedText, barcodeResult.barcodes)
-  let finalConfidence = generalResult.data.confidence
-
-  if (needsFallbackPass(parsed.metadata)) {
-    emitProgress({
-      label: 'Retrying numeric text',
-      value: 0.94,
-    })
-
-    const digitsCanvas = createProcessedCanvas(sourceCanvas, 'digits')
-    const digitsResult = await worker.recognize(digitsCanvas)
-    mergedText = mergeWholeImageText(generalResult.data.text, digitsResult.data.text)
-    parsed = parsePhoneMetadata(mergedText, barcodeResult.barcodes)
-    finalConfidence =
-      (generalResult.data.confidence + digitsResult.data.confidence) / 2
-  }
+  const mergedText = mergeWholeImageText(ocrResult.text, '')
+  const parsed = parsePhoneMetadata(mergedText, barcodeResult.barcodes)
 
   emitProgress({
     label: 'Scan finished',
@@ -206,7 +165,8 @@ export async function scanPhoneLabel(
   return {
     rawText: mergedText,
     normalizedText: parsed.normalizedText,
-    ocrConfidence: finalConfidence,
+    ocrConfidence: ocrResult.confidence,
+    ocrProvider: ocrResult.provider,
     barcodes: barcodeResult.barcodes,
     barcodeDetectorSupported: barcodeResult.supported,
     parsed: parsed.metadata,

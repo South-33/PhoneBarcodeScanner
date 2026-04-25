@@ -157,7 +157,7 @@ function App() {
 
           <div className="workflow-strip" aria-label="Demo workflow">
             <span>1. Capture label</span>
-            <span>2. OCR + barcode</span>
+            <span>2. Barcode first</span>
             <span>3. Clean metadata</span>
           </div>
         </div>
@@ -211,7 +211,14 @@ function App() {
             <p className="status-copy">{scanProgress.label}</p>
             {scanResult ? (
               <p className="status-copy subtle">
-                OCR confidence {Math.round(scanResult.ocrConfidence)}%. Barcode detector{' '}
+                {scanResult.ocrProvider === 'none'
+                  ? 'Resolved from barcode hits first.'
+                  : `OCR via ${
+                      scanResult.ocrProvider === 'google_vision'
+                        ? 'Google Vision'
+                        : 'Tesseract.js'
+                    }. Confidence ${Math.round(scanResult.ocrConfidence)}%.`}{' '}
+                Barcode detector{' '}
                 {scanResult.barcodeDetectorSupported ? 'available' : 'not available'} in this browser.
               </p>
             ) : null}
@@ -253,8 +260,8 @@ function App() {
             <div className="mini-card">
               <p className="mini-label">Current demo scope</p>
               <p>
-                Code-only demo. It extracts barcode-strip identifiers first, then resolves
-                model details from lookup data instead of the printed product-name text.
+                Barcode-first demo. It resolves IMEI, serial, EID, and UPC from the code
+                strip first, then falls back to OCR only if the bars are not enough.
               </p>
             </div>
           </div>
@@ -306,12 +313,12 @@ function App() {
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Raw OCR</p>
-              <h2>Identifier text the model read</h2>
+              <h2>Fallback text the model read</h2>
             </div>
           </div>
 
           <pre className="raw-output">
-            {scanResult?.normalizedText || 'OCR output will appear here after the first scan.'}
+            {scanResult?.normalizedText || 'Barcode or fallback OCR output will appear here after the first scan.'}
           </pre>
         </article>
 
@@ -333,8 +340,8 @@ function App() {
               ))
             ) : (
               <p className="empty-copy">
-                No barcode detected yet. OCR can still extract useful fields even when the
-                browser does not expose `BarcodeDetector`.
+                No barcode detected yet. OCR can still fill gaps, but the preferred path is
+                decoding the barcode strip directly.
               </p>
             )}
           </div>

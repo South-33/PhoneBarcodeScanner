@@ -43,6 +43,7 @@ export type PhoneLabelScanResult = {
   rawText: string
   normalizedText: string
   ocrConfidence: number
+  ocrProvider: 'none' | 'tesseract' | 'google_vision'
   barcodes: BarcodeMatch[]
   barcodeDetectorSupported: boolean
   parsed: ParsedPhoneMetadata
