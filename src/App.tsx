@@ -130,9 +130,9 @@ function App() {
           <p className="eyebrow">Quick showcase for a phone shop workflow</p>
           <h1>Read the box label. Clean the phone metadata. Stop typing it by hand.</h1>
           <p className="hero-lead">
-            This demo uses a phone photo or upload, runs OCR on the label, detects the
-            barcode when the browser supports it, and turns the messy text into stock
-            fields like model, storage, color, IMEI, serial, and UPC.
+            This demo reads identifier codes from the label strip, extracts IMEI, serial,
+            EID, and UPC/EAN, and only fills phone metadata when those identifiers match a
+            lookup record.
           </p>
 
           <div className="workflow-strip" aria-label="Demo workflow">
@@ -226,16 +226,15 @@ function App() {
             <div className="mini-card">
               <p className="mini-label">Why barcode only is not enough</p>
               <p>
-                UPC or GTIN gives you the identifier. The sales-friendly details usually
-                still come from OCR text or a product lookup table.
+                Identifier codes are the source of truth in this mode. Metadata only
+                appears when IMEI, serial, or UPC matches a lookup record.
               </p>
             </div>
             <div className="mini-card">
               <p className="mini-label">Current demo scope</p>
               <p>
-                Tuned for iPhone plus common Android box labels from Samsung, Pixel,
-                Xiaomi, OnePlus, OPPO, vivo, realme, Motorola, Nothing, Huawei, Honor,
-                Sony, and Nokia.
+                Code-only demo. It extracts barcode-strip identifiers first, then resolves
+                model details from lookup data instead of the printed product-name text.
               </p>
             </div>
           </div>
@@ -276,7 +275,7 @@ function App() {
           <div className="panel-head">
             <div>
               <p className="panel-kicker">Raw OCR</p>
-              <h2>What the model actually read</h2>
+              <h2>Identifier text the model read</h2>
             </div>
           </div>
 

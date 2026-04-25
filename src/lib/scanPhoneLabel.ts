@@ -98,28 +98,23 @@ async function detectBarcodes(canvas: HTMLCanvasElement): Promise<NativeBarcodeR
 }
 
 function mergeWholeImageText(primaryText: string, secondaryText: string) {
-  const primaryLines = primaryText
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
+  const interestingLine =
+    /\b(?:IMEI|MEID|EID|Serial|UPC|EAN|GTIN)\b/i
 
-  const secondaryLines = secondaryText
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
+  const identifierLikeLine = /^\D{0,10}[A-Z0-9 -]{8,}$/i
 
-  const merged = [...primaryLines]
-
-  for (const line of secondaryLines) {
-    if (
-      /\b(?:IMEI|MEID|EID|Serial|Model|UPC|EAN|GTIN|iPhone|Galaxy|Pixel|Xiaomi|OnePlus|OPPO|vivo|realme|Motorola|Nothing|Huawei|Honor|Xperia|Nokia)\b/i.test(
-        line,
-      ) &&
-      !merged.includes(line)
-    ) {
-      merged.push(line)
-    }
-  }
+  const merged = [...new Set(
+    `${primaryText}\n${secondaryText}`
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter(
+        (line) =>
+          interestingLine.test(line) ||
+          /\b\d{12,32}\b/.test(line) ||
+          (identifierLikeLine.test(line) && /\d/.test(line)),
+      ),
+  )]
 
   return merged.join('\n')
 }
