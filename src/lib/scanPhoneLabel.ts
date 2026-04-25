@@ -124,26 +124,43 @@ function mergeWholeImageText(primaryText: string, secondaryText: string) {
   return merged.join('\n')
 }
 
+function needsFallbackPass(parsed: PhoneLabelScanResult['parsed']) {
+  return !(
+    parsed.deviceName &&
+    parsed.skuCode &&
+    parsed.modelNumber &&
+    (parsed.serialNumber || parsed.imeis.length || parsed.eids.length)
+  )
+}
+
 export async function scanPhoneLabel(
   file: File,
   onProgress?: (progress: ScanProgress) => void,
 ): Promise<PhoneLabelScanResult> {
-  onProgress?.({
+  let maxProgress = 0
+  const emitProgress = (progress: ScanProgress) => {
+    maxProgress = Math.max(maxProgress, progress.value)
+    onProgress?.({
+      label: progress.label,
+      value: maxProgress,
+    })
+  }
+
+  emitProgress({
     label: 'Preparing image',
     value: 0.08,
   })
 
   const sourceCanvas = await buildSourceCanvas(file)
   const generalCanvas = createProcessedCanvas(sourceCanvas, 'general')
-  const digitsCanvas = createProcessedCanvas(sourceCanvas, 'digits')
 
-  onProgress?.({
+  emitProgress({
     label: 'Checking barcode area',
     value: 0.16,
   })
 
   const barcodePromise = detectBarcodes(sourceCanvas)
-  const worker = await getWorker(onProgress)
+  const worker = await getWorker(emitProgress)
 
   await worker.setParameters({
     tessedit_pageseg_mode: PSM.SPARSE_TEXT,
@@ -153,27 +170,40 @@ export async function scanPhoneLabel(
       'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-(),.+',
   })
 
-  const [generalResult, digitsResult, barcodeResult] = await Promise.all([
+  emitProgress({
+    label: 'Running OCR',
+    value: 0.22,
+  })
+
+  const [generalResult, barcodeResult] = await Promise.all([
     worker.recognize(generalCanvas),
-    worker.recognize(digitsCanvas),
     barcodePromise,
   ])
 
-  onProgress?.({
+  emitProgress({
     label: 'Extracting fields from OCR text',
     value: 0.92,
   })
 
-  const mergedText = mergeWholeImageText(
-    generalResult.data.text,
-    digitsResult.data.text,
-  )
-  const parsed = parsePhoneMetadata(mergedText, barcodeResult.barcodes)
+  let mergedText = generalResult.data.text
+  let parsed = parsePhoneMetadata(mergedText, barcodeResult.barcodes)
+  let finalConfidence = generalResult.data.confidence
 
-  const averageConfidence =
-    (generalResult.data.confidence + digitsResult.data.confidence) / 2
+  if (needsFallbackPass(parsed.metadata)) {
+    emitProgress({
+      label: 'Retrying numeric text',
+      value: 0.94,
+    })
 
-  onProgress?.({
+    const digitsCanvas = createProcessedCanvas(sourceCanvas, 'digits')
+    const digitsResult = await worker.recognize(digitsCanvas)
+    mergedText = mergeWholeImageText(generalResult.data.text, digitsResult.data.text)
+    parsed = parsePhoneMetadata(mergedText, barcodeResult.barcodes)
+    finalConfidence =
+      (generalResult.data.confidence + digitsResult.data.confidence) / 2
+  }
+
+  emitProgress({
     label: 'Scan finished',
     value: 1,
   })
@@ -181,7 +211,7 @@ export async function scanPhoneLabel(
   return {
     rawText: mergedText,
     normalizedText: parsed.normalizedText,
-    ocrConfidence: averageConfidence,
+    ocrConfidence: finalConfidence,
     barcodes: barcodeResult.barcodes,
     barcodeDetectorSupported: barcodeResult.supported,
     parsed: parsed.metadata,
