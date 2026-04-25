@@ -138,6 +138,10 @@ const SKU_PATTERNS = [
   /\b[A-Z]{2,5}-[A-Z0-9]{2,6}\b/i,
 ]
 
+const APPLE_MODEL_FALLBACKS: Record<string, string> = {
+  A2221: 'iPhone 11',
+}
+
 function escapeRegExp(input: string) {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -165,6 +169,9 @@ function normalizeText(input: string) {
       .replace(/[|]/g, 'I')
       .replace(/[\u201C\u201D]/g, '"')
       .replace(/[\u2018\u2019]/g, "'")
+      .replace(/\b(\d{2,4})G8\b/gi, '$1GB')
+      .replace(/\bAppie\b/g, 'Apple')
+      .replace(/\biPh[0o]ne\b/gi, 'iPhone')
       .replace(/[^\S\n]+/g, ' ')
       .trim(),
   )
@@ -201,6 +208,10 @@ function collectMatches(
 function inferBrand(input?: string) {
   if (!input) {
     return undefined
+  }
+
+  if (/\bM[A-Z0-9]{4,}\/[A-Z0-9]{1,4}\b/.test(input)) {
+    return 'Apple'
   }
 
   return BRAND_RULES.find((rule) => rule.pattern.test(input))?.brand
@@ -268,6 +279,11 @@ function findModelCode(source: string, brand?: string) {
   const labelled = collectMatches(MODEL_PATTERN, source, cleanLine)[0]
   if (labelled) {
     return labelled
+  }
+
+  const appleModel = source.match(/\bA\d{4}\b/)
+  if (appleModel?.[0]) {
+    return appleModel[0]
   }
 
   const lines = source.split('\n')
@@ -396,7 +412,18 @@ function extractDeviceName(
   const stripped = stripVariant(baseLine, [color, memory, storage])
   const normalized = normalizeBrandPrefixes(stripped || baseLine, brand)
 
-  return normalized || undefined
+  if (!normalized) {
+    return undefined
+  }
+
+  if (brand === 'Apple') {
+    const appleMatch = normalized.match(/\biPhone\s*(?:SE\s*\(\d+(?:st|nd|rd|th)\s+generation\)|\d{1,2}(?:\s*(?:mini|Plus|Pro|Pro Max))?)\b/i)
+    if (appleMatch?.[0]) {
+      return appleMatch[0].replace(/\s{2,}/g, ' ').trim()
+    }
+  }
+
+  return normalized
 }
 
 function buildDisplayName(
@@ -426,9 +453,41 @@ function findFallbackSku(lines: string[]) {
   return undefined
 }
 
+function findStandaloneUpc(source: string, imeis: string[], eids: string[]) {
+  const blocked = new Set([...imeis, ...eids])
+  const candidates = [...source.matchAll(/\b\d{12,13}\b/g)]
+    .map((match) => match[0])
+    .filter((value) => !blocked.has(value))
+
+  return candidates[0]
+}
+
+function dedupeLikelyGarbage(lines: string[]) {
+  return uniqueValues(
+    lines.filter((line) => {
+      if (line.length < 4) {
+        return false
+      }
+
+      const alphaCount = (line.match(/[A-Za-z]/g) ?? []).length
+      const usefulCount = (line.match(/[A-Za-z0-9]/g) ?? []).length
+
+      if (usefulCount < 3) {
+        return false
+      }
+
+      if (alphaCount <= 1 && usefulCount <= 4) {
+        return false
+      }
+
+      return true
+    }),
+  )
+}
+
 export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
   const normalizedText = normalizeText(rawText)
-  const rawLines = uniqueValues(
+  const rawLines = dedupeLikelyGarbage(
     normalizedText
       .split('\n')
       .map(cleanLine)
@@ -444,7 +503,8 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
 
   const labelledUpc = collectMatches(UPC_PATTERN, joinedText, normalizeDigits)[0]
   const barcodeUpc = barcodeValues.find((value) => /^\d{8,14}$/.test(value))
-  const upc = labelledUpc || barcodeUpc
+  const fallbackUpc = findStandaloneUpc(joinedText, imeis, eids)
+  const upc = labelledUpc || barcodeUpc || fallbackUpc
 
   const productLine = pickProductLine(rawLines)
   const preBrand = inferBrand(productLine || joinedText)
@@ -462,6 +522,10 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
   )
   const brand = inferBrand(deviceName || productLine || joinedText)
   const modelNumber = findModelCode(joinedText, brand)
+  const fallbackDeviceName =
+    brand === 'Apple' && modelNumber
+      ? APPLE_MODEL_FALLBACKS[modelNumber]
+      : undefined
 
   const notes: string[] = []
 
@@ -484,9 +548,14 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
   }
 
   const metadata: ParsedPhoneMetadata = {
-    displayName: buildDisplayName(deviceName, color, memory, storage),
+    displayName: buildDisplayName(
+      deviceName || fallbackDeviceName,
+      color,
+      memory,
+      storage,
+    ),
     brand,
-    deviceName,
+    deviceName: deviceName || fallbackDeviceName,
     memory,
     storage,
     color,
