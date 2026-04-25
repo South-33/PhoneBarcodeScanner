@@ -28,6 +28,12 @@ type OcrTask = {
   whitelist?: string
 }
 
+type OcrTaskResult = {
+  label: string
+  text: string
+  confidence: number
+}
+
 let workerPromise: Promise<Tesseract.Worker> | null = null
 let activeProgressListener: ((progress: ScanProgress) => void) | null = null
 
@@ -124,6 +130,110 @@ async function recognizeTask(worker: Tesseract.Worker, task: OcrTask) {
   }
 }
 
+function normalizeDigits(value: string) {
+  return value.replace(/\D/g, '')
+}
+
+function validateUpcA(code: string) {
+  if (!/^\d{12}$/.test(code)) {
+    return false
+  }
+
+  const digits = code.split('').map(Number)
+  const checkDigit = digits[11] ?? 0
+  const sumOdd =
+    (digits[0] ?? 0) +
+    (digits[2] ?? 0) +
+    (digits[4] ?? 0) +
+    (digits[6] ?? 0) +
+    (digits[8] ?? 0) +
+    (digits[10] ?? 0)
+  const sumEven =
+    (digits[1] ?? 0) +
+    (digits[3] ?? 0) +
+    (digits[5] ?? 0) +
+    (digits[7] ?? 0) +
+    (digits[9] ?? 0)
+
+  const expected = (10 - ((sumOdd * 3 + sumEven) % 10)) % 10
+  return expected === checkDigit
+}
+
+function validateEan13(code: string) {
+  if (!/^\d{13}$/.test(code)) {
+    return false
+  }
+
+  const digits = code.split('').map(Number)
+  const checkDigit = digits[12] ?? 0
+  let sum = 0
+
+  for (let index = 0; index < 12; index += 1) {
+    sum += (digits[index] ?? 0) * (index % 2 === 0 ? 1 : 3)
+  }
+
+  const expected = (10 - (sum % 10)) % 10
+  return expected === checkDigit
+}
+
+function extractBarcodeDigits(text: string) {
+  const compact = normalizeDigits(text)
+
+  for (let length = 12; length <= 13; length += 1) {
+    for (let index = 0; index <= compact.length - length; index += 1) {
+      const candidate = compact.slice(index, index + length)
+      if (
+        (length === 12 && validateUpcA(candidate)) ||
+        (length === 13 && validateEan13(candidate))
+      ) {
+        return candidate
+      }
+    }
+  }
+
+  if (compact.length === 12 || compact.length === 13) {
+    return compact
+  }
+
+  return undefined
+}
+
+function normalizeIdentifierLine(
+  label: string,
+  text: string,
+) {
+  const compactText = text.replace(/\s+/g, ' ').trim()
+
+  switch (label) {
+    case 'eid-line': {
+      const digits = normalizeDigits(compactText)
+      return digits.length >= 24 ? `EID ${digits}` : compactText
+    }
+    case 'imei-line': {
+      const digits = normalizeDigits(compactText)
+      return digits.length >= 14 ? `IMEI ${digits.slice(0, 15)}` : compactText
+    }
+    case 'meid-line': {
+      const digits = normalizeDigits(compactText)
+      return digits.length >= 14 ? `IMEI/MEID ${digits.slice(0, 15)}` : compactText
+    }
+    case 'serial-line': {
+      const candidate = compactText
+        .replace(/[^A-Za-z0-9]/g, ' ')
+        .split(/\s+/)
+        .find((token) => /[A-Z]/i.test(token) && /\d/.test(token) && token.length >= 8)
+
+      return candidate ? `Serial No. ${candidate.toUpperCase()}` : compactText
+    }
+    case 'barcode-digits': {
+      const code = extractBarcodeDigits(compactText)
+      return code ? `UPC ${code}` : compactText
+    }
+    default:
+      return compactText
+  }
+}
+
 function buildTargetedTasks(sourceCanvas: HTMLCanvasElement) {
   const generalCanvas = createProcessedCanvas(sourceCanvas, 'general')
 
@@ -137,11 +247,11 @@ function buildTargetedTasks(sourceCanvas: HTMLCanvasElement) {
       label: 'product-line',
       canvas: createCropCanvas(
         sourceCanvas,
-        { left: 0.02, top: 0.20, width: 0.56, height: 0.14 },
+        { left: 0.01, top: 0.19, width: 0.50, height: 0.08 },
         'general',
-        3,
+        4,
       ),
-      psm: PSM.SINGLE_BLOCK,
+      psm: PSM.SINGLE_LINE,
       whitelist:
         'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,./-+',
     },
@@ -149,7 +259,173 @@ function buildTargetedTasks(sourceCanvas: HTMLCanvasElement) {
       label: 'description-model',
       canvas: createCropCanvas(
         sourceCanvas,
-        { left: 0.02, top: 0.22, width: 0.60, height: 0.20 },
+        { left: 0.01, top: 0.22, width: 0.56, height: 0.12 },
+        'general',
+        3.2,
+      ),
+      psm: PSM.SPARSE_TEXT,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,./-+',
+    },
+    {
+      label: 'eid-line',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.0, top: 0.31, width: 0.53, height: 0.055 },
+        'digits',
+        4,
+      ),
+      psm: PSM.SINGLE_LINE,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-',
+    },
+    {
+      label: 'imei-line',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.0, top: 0.39, width: 0.44, height: 0.055 },
+        'digits',
+        4,
+      ),
+      psm: PSM.SINGLE_LINE,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-',
+    },
+    {
+      label: 'serial-line',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.0, top: 0.47, width: 0.49, height: 0.065 },
+        'digits',
+        4,
+      ),
+      psm: PSM.SINGLE_LINE,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-()',
+    },
+    {
+      label: 'meid-line',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.0, top: 0.56, width: 0.45, height: 0.055 },
+        'digits',
+        4,
+      ),
+      psm: PSM.SINGLE_LINE,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-',
+    },
+    {
+      label: 'identifier-block',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.0, top: 0.31, width: 0.53, height: 0.32 },
+        'digits',
+        3.2,
+      ),
+      psm: PSM.SPARSE_TEXT,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-()',
+    },
+    {
+      label: 'barcode-digits',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.62, top: 0.335, width: 0.34, height: 0.10 },
+        'digits',
+        5,
+      ),
+      psm: PSM.SINGLE_LINE,
+      whitelist: '0123456789 UPCEAN',
+    },
+    {
+      label: 'barcode-digits-wide',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.58, top: 0.32, width: 0.40, height: 0.14 },
+        'digits',
+        4,
+      ),
+      psm: PSM.SINGLE_BLOCK,
+      whitelist: '0123456789 UPCEAN',
+    },
+    {
+      label: 'barcode-area',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.56, top: 0.28, width: 0.42, height: 0.20 },
+        'binary',
+        3,
+      ),
+      psm: PSM.SPARSE_TEXT,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ',
+    },
+    {
+      label: 'serial-imei-lower',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.0, top: 0.42, width: 0.54, height: 0.24 },
+        'digits',
+        3,
+      ),
+      psm: PSM.SPARSE_TEXT,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-()',
+    },
+    {
+      label: 'upper-identifiers',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.0, top: 0.29, width: 0.58, height: 0.18 },
+        'digits',
+        3,
+      ),
+      psm: PSM.SPARSE_TEXT,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-()',
+    },
+    {
+      label: 'lower-left-close',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.0, top: 0.30, width: 0.56, height: 0.36 },
+        'general',
+        2.8,
+      ),
+      psm: PSM.SPARSE_TEXT,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-(),.',
+    },
+    {
+      label: 'sku-focus',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.0, top: 0.18, width: 0.28, height: 0.06 },
+        'general',
+        5,
+      ),
+      psm: PSM.SINGLE_LINE,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-',
+    },
+    {
+      label: 'product-line-wide',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.0, top: 0.18, width: 0.58, height: 0.09 },
+        'general',
+        3.5,
+      ),
+      psm: PSM.SINGLE_BLOCK,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,./-+',
+    },
+    {
+      label: 'description-model-wide',
+      canvas: createCropCanvas(
+        sourceCanvas,
+        { left: 0.0, top: 0.22, width: 0.60, height: 0.16 },
         'general',
         2.8,
       ),
@@ -158,39 +434,44 @@ function buildTargetedTasks(sourceCanvas: HTMLCanvasElement) {
         'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ,./-+',
     },
     {
-      label: 'upper-identifiers',
-      canvas: createCropCanvas(
-        sourceCanvas,
-        { left: 0.02, top: 0.29, width: 0.58, height: 0.18 },
-        'digits',
-        3,
-      ),
+      label: 'full-label-source',
+      canvas: createProcessedCanvas(sourceCanvas, 'source'),
       psm: PSM.SPARSE_TEXT,
-      whitelist:
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-',
     },
     {
-      label: 'serial-imei-lower',
-      canvas: createCropCanvas(
-        sourceCanvas,
-        { left: 0.02, top: 0.42, width: 0.54, height: 0.24 },
-        'digits',
-        3,
-      ),
+      label: 'full-label-binary',
+      canvas: createProcessedCanvas(sourceCanvas, 'binary'),
       psm: PSM.SPARSE_TEXT,
-      whitelist:
-        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-',
     },
     {
-      label: 'barcode-digits',
+      label: 'full-label-general',
+      canvas: generalCanvas,
+      psm: PSM.SPARSE_TEXT,
+    },
+    {
+      label: 'full-label-digits',
+      canvas: createProcessedCanvas(sourceCanvas, 'digits'),
+      psm: PSM.SPARSE_TEXT,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-(),.',
+    },
+    {
+      label: 'legacy-full-label',
+      canvas: generalCanvas,
+      psm: PSM.SPARSE_TEXT,
+      whitelist:
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-(),.',
+    },
+    {
+      label: 'barcode-digits-fallback',
       canvas: createCropCanvas(
         sourceCanvas,
         { left: 0.62, top: 0.34, width: 0.34, height: 0.11 },
-        'digits',
+        'general',
         4,
       ),
       psm: PSM.SINGLE_LINE,
-      whitelist: '0123456789 UPCEANGTIN',
+      whitelist: '0123456789 UPCEAN',
     },
   ]
 
@@ -201,7 +482,7 @@ function buildTargetedTasks(sourceCanvas: HTMLCanvasElement) {
 }
 
 function mergeTextCandidates(
-  results: Array<{ label: string; text: string; confidence: number }>,
+  results: OcrTaskResult[],
 ) {
   const sections: string[] = []
 
@@ -210,7 +491,7 @@ function mergeTextCandidates(
       continue
     }
 
-    sections.push(result.text)
+    sections.push(normalizeIdentifierLine(result.label, result.text))
   }
 
   return sections.join('\n')
@@ -236,7 +517,7 @@ export async function scanPhoneLabel(
   const barcodePromise = detectBarcodes(sourceCanvas)
   const worker = await getWorker(onProgress)
 
-  const taskResults: Array<{ label: string; text: string; confidence: number }> = []
+  const taskResults: OcrTaskResult[] = []
 
   for (const [index, task] of tasks.entries()) {
     onProgress?.({
@@ -249,7 +530,23 @@ export async function scanPhoneLabel(
 
   const barcodeResult = await barcodePromise
   const mergedText = mergeTextCandidates(taskResults)
-  const parsed = parsePhoneMetadata(mergedText, barcodeResult.barcodes)
+  const barcodeTaskMatches = taskResults
+    .filter((result) => result.label.includes('barcode'))
+    .map((result) => extractBarcodeDigits(result.text))
+    .filter((value): value is string => Boolean(value))
+    .map((rawValue) => ({
+      format: rawValue.length === 13 ? 'ean_13' : 'upc_a',
+      rawValue,
+    }))
+
+  const mergedBarcodes = [...new Map(
+    [...barcodeResult.barcodes, ...barcodeTaskMatches].map((barcode) => [
+      `${barcode.format}:${barcode.rawValue}`,
+      barcode,
+    ]),
+  ).values()]
+
+  const parsed = parsePhoneMetadata(mergedText, mergedBarcodes)
 
   onProgress?.({
     label: 'Cleaning structured fields',
@@ -269,7 +566,7 @@ export async function scanPhoneLabel(
     rawText: mergedText,
     normalizedText: parsed.normalizedText,
     ocrConfidence: averageConfidence,
-    barcodes: barcodeResult.barcodes,
+    barcodes: mergedBarcodes,
     barcodeDetectorSupported: barcodeResult.supported,
     parsed: parsed.metadata,
   }

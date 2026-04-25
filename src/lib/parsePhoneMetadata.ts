@@ -111,7 +111,7 @@ const PRODUCT_KEYWORDS =
 const IGNORE_LINE_PATTERN =
   /\b(?:designed|assembled|other items|apple inc|copyright|california|china|imei|meid|serial|eid|upc|ean|gtin|barcode|recycle|made in|manufactured|imported|address|support|warranty|rated|voltage|fcc\b|ce\b|ukca|bis\b|rohs\b)\b/i
 
-const IMEI_PATTERN = /\bIMEI(?:\s*\d|\/MEID)?\b[^0-9]{0,8}([0-9 ]{14,22})/gi
+const IMEI_PATTERN = /\bIMEI(?:\/MEID)?[:\s-]*([0-9 ]{14,22})/gi
 const SERIAL_PATTERN =
   /\b(?:Serial(?:\s*(?:No\.?|Number))?|S\/N|SN)\b[^A-Z0-9]{0,8}([A-Z0-9-]{6,24})/gi
 const MODEL_PATTERN =
@@ -186,6 +186,30 @@ function cleanLine(line: string) {
 
 function normalizeDigits(value: string) {
   return value.replace(/\D/g, '')
+}
+
+function normalizeImei(value: string) {
+  const digits = normalizeDigits(value)
+
+  if (digits.length === 16 && /^[12]/.test(digits)) {
+    return digits.slice(1)
+  }
+
+  if (digits.length > 15) {
+    return digits.slice(-15)
+  }
+
+  return digits
+}
+
+function normalizeEid(value: string) {
+  const digits = normalizeDigits(value)
+
+  if (digits.length > 32) {
+    return digits.slice(-32)
+  }
+
+  return digits
 }
 
 function collectMatches(
@@ -315,6 +339,10 @@ function scoreProductLine(line: string) {
     score += 8
   }
 
+  if (/\biPhone\b/i.test(line) && /\b\d{1,2}\b/.test(line)) {
+    score += 6
+  }
+
   if (findStorage(line)) {
     score += 4
   }
@@ -329,6 +357,10 @@ function scoreProductLine(line: string) {
 
   if (findSkuCode(line)) {
     score += 2
+  }
+
+  if (/^\bA\d{4}\b$/i.test(line) || /^[A-Z]$/.test(line)) {
+    score -= 12
   }
 
   if (line.includes(',')) {
@@ -416,6 +448,10 @@ function extractDeviceName(
     return undefined
   }
 
+  if (normalized.length < 4 || /^[A-Z]$/.test(normalized) || /^A\d{4}$/i.test(normalized)) {
+    return undefined
+  }
+
   if (brand === 'Apple') {
     const appleMatch = normalized.match(/\biPhone\s*(?:SE\s*\(\d+(?:st|nd|rd|th)\s+generation\)|\d{1,2}(?:\s*(?:mini|Plus|Pro|Pro Max))?)\b/i)
     if (appleMatch?.[0]) {
@@ -453,13 +489,19 @@ function findFallbackSku(lines: string[]) {
   return undefined
 }
 
-function findStandaloneUpc(source: string, imeis: string[], eids: string[]) {
-  const blocked = new Set([...imeis, ...eids])
-  const candidates = [...source.matchAll(/\b\d{12,13}\b/g)]
-    .map((match) => match[0])
-    .filter((value) => !blocked.has(value))
+function preferLongestNumericValues(values: string[]) {
+  const sorted = [...values].sort((left, right) => right.length - left.length)
+  const filtered: string[] = []
 
-  return candidates[0]
+  for (const value of sorted) {
+    if (filtered.some((kept) => kept.includes(value))) {
+      continue
+    }
+
+    filtered.push(value)
+  }
+
+  return filtered
 }
 
 function dedupeLikelyGarbage(lines: string[]) {
@@ -497,14 +539,17 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
   const barcodeValues = uniqueValues(barcodes.map((barcode) => barcode.rawValue.trim()))
   const joinedText = rawLines.join('\n')
 
-  const imeis = collectMatches(IMEI_PATTERN, joinedText, normalizeDigits)
-  const eids = collectMatches(EID_PATTERN, joinedText, normalizeDigits)
+  const imeis = preferLongestNumericValues(
+    collectMatches(IMEI_PATTERN, joinedText, normalizeImei),
+  )
+  const eids = preferLongestNumericValues(
+    collectMatches(EID_PATTERN, joinedText, normalizeEid),
+  )
   const serialNumber = collectMatches(SERIAL_PATTERN, joinedText, cleanLine)[0]
 
   const labelledUpc = collectMatches(UPC_PATTERN, joinedText, normalizeDigits)[0]
   const barcodeUpc = barcodeValues.find((value) => /^\d{8,14}$/.test(value))
-  const fallbackUpc = findStandaloneUpc(joinedText, imeis, eids)
-  const upc = labelledUpc || barcodeUpc || fallbackUpc
+  const upc = labelledUpc || barcodeUpc
 
   const productLine = pickProductLine(rawLines)
   const preBrand = inferBrand(productLine || joinedText)
@@ -526,10 +571,12 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
     brand === 'Apple' && modelNumber
       ? APPLE_MODEL_FALLBACKS[modelNumber]
       : undefined
+  const resolvedBrand = brand || (skuCode?.startsWith('M') ? 'Apple' : undefined)
+  const resolvedDeviceName = deviceName || fallbackDeviceName
 
   const notes: string[] = []
 
-  if (!deviceName && upc) {
+  if (!resolvedDeviceName && upc) {
     notes.push(
       'UPC can identify the item, but the clean stock name still usually comes from OCR text or a lookup database.',
     )
@@ -549,13 +596,13 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
 
   const metadata: ParsedPhoneMetadata = {
     displayName: buildDisplayName(
-      deviceName || fallbackDeviceName,
+      resolvedDeviceName,
       color,
       memory,
       storage,
     ),
-    brand,
-    deviceName: deviceName || fallbackDeviceName,
+    brand: resolvedBrand,
+    deviceName: resolvedDeviceName,
     memory,
     storage,
     color,
