@@ -1,5 +1,10 @@
 import { BarcodeFormat, BrowserMultiFormatOneDReader } from '@zxing/browser'
-import { buildSourceCanvas, createCropCanvas, createProcessedCanvas } from './imageTools'
+import {
+  buildSourceCanvas,
+  createCropCanvas,
+  createProcessedCanvas,
+  releaseCanvas,
+} from './imageTools'
 import { runOcrProvider } from './ocrProviders'
 import { parsePhoneMetadata } from './parsePhoneMetadata'
 import type { BarcodeMatch, PhoneLabelScanResult, ScanProgress } from '../types'
@@ -72,19 +77,21 @@ async function detectBarcodes(canvas: HTMLCanvasElement): Promise<NativeBarcodeR
   }
 }
 
-function createBarcodeCanvases(sourceCanvas: HTMLCanvasElement) {
+type BarcodeCanvasFactory = () => HTMLCanvasElement
+
+function createBarcodeCanvasFactories(sourceCanvas: HTMLCanvasElement): BarcodeCanvasFactory[] {
   return [
-    sourceCanvas,
-    createProcessedCanvas(sourceCanvas, 'general'),
-    createProcessedCanvas(sourceCanvas, 'binary'),
-    createCropCanvas(sourceCanvas, { left: 0, top: 0.34, width: 1, height: 0.42 }, 'general', 3),
-    createCropCanvas(sourceCanvas, { left: 0, top: 0.34, width: 1, height: 0.42 }, 'binary', 3),
-    createCropCanvas(sourceCanvas, { left: 0, top: 0.44, width: 0.58, height: 0.34 }, 'binary', 4),
-    createCropCanvas(sourceCanvas, { left: 0.42, top: 0.38, width: 0.58, height: 0.24 }, 'binary', 4),
-    createCropCanvas(sourceCanvas, { left: 0.02, top: 0.52, width: 0.68, height: 0.32 }, 'general', 5),
-    createCropCanvas(sourceCanvas, { left: 0.02, top: 0.52, width: 0.68, height: 0.32 }, 'binary', 5),
-    createCropCanvas(sourceCanvas, { left: 0.52, top: 0.50, width: 0.46, height: 0.20 }, 'general', 6),
-    createCropCanvas(sourceCanvas, { left: 0.52, top: 0.50, width: 0.46, height: 0.20 }, 'binary', 6),
+    () => sourceCanvas,
+    () => createProcessedCanvas(sourceCanvas, 'general'),
+    () => createProcessedCanvas(sourceCanvas, 'binary'),
+    () => createCropCanvas(sourceCanvas, { left: 0, top: 0.34, width: 1, height: 0.42 }, 'general', 2),
+    () => createCropCanvas(sourceCanvas, { left: 0, top: 0.34, width: 1, height: 0.42 }, 'binary', 2),
+    () => createCropCanvas(sourceCanvas, { left: 0, top: 0.44, width: 0.58, height: 0.34 }, 'binary', 2.5),
+    () => createCropCanvas(sourceCanvas, { left: 0.42, top: 0.38, width: 0.58, height: 0.24 }, 'binary', 2.5),
+    () => createCropCanvas(sourceCanvas, { left: 0.02, top: 0.52, width: 0.68, height: 0.32 }, 'general', 2.5),
+    () => createCropCanvas(sourceCanvas, { left: 0.02, top: 0.52, width: 0.68, height: 0.32 }, 'binary', 2.5),
+    () => createCropCanvas(sourceCanvas, { left: 0.52, top: 0.50, width: 0.46, height: 0.20 }, 'general', 3),
+    () => createCropCanvas(sourceCanvas, { left: 0.52, top: 0.50, width: 0.46, height: 0.20 }, 'binary', 3),
   ]
 }
 
@@ -100,7 +107,9 @@ async function detectZxingBarcodes(canvas: HTMLCanvasElement): Promise<BarcodeMa
 
   const matches: BarcodeMatch[] = []
 
-  for (const candidateCanvas of createBarcodeCanvases(canvas)) {
+  for (const createCandidateCanvas of createBarcodeCanvasFactories(canvas)) {
+    const candidateCanvas = createCandidateCanvas()
+
     try {
       const result = reader.decodeFromCanvas(candidateCanvas)
       const rawValue = result.getText()
@@ -113,6 +122,10 @@ async function detectZxingBarcodes(canvas: HTMLCanvasElement): Promise<BarcodeMa
       }
     } catch {
       // ZXing throws on each failed decode attempt; a miss on one preset is normal.
+    } finally {
+      if (candidateCanvas !== canvas) {
+        releaseCanvas(candidateCanvas)
+      }
     }
   }
 
@@ -204,6 +217,8 @@ export async function scanPhoneLabel(
       value: 1,
     })
 
+    releaseCanvas(sourceCanvas)
+
     return {
       rawText: barcodeTranscript,
       normalizedText: barcodeTranscript,
@@ -234,6 +249,8 @@ export async function scanPhoneLabel(
     label: 'Scan finished',
     value: 1,
   })
+
+  releaseCanvas(sourceCanvas)
 
   return {
     rawText: mergedText,

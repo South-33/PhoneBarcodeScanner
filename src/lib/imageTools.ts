@@ -40,11 +40,16 @@ function requireContext(canvas: HTMLCanvasElement) {
   return context
 }
 
+export function releaseCanvas(canvas: HTMLCanvasElement) {
+  canvas.width = 0
+  canvas.height = 0
+}
+
 export async function buildSourceCanvas(file: File) {
   const image = await loadImage(file)
   const longestEdge = Math.max(image.width, image.height)
-  const targetEdge = 2200
-  const scale = clamp(targetEdge / longestEdge, 1, 2.4)
+  const targetEdge = 1600
+  const scale = Math.min(1, targetEdge / longestEdge)
   const width = Math.max(1, Math.round(image.width * scale))
   const height = Math.max(1, Math.round(image.height * scale))
 

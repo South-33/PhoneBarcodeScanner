@@ -1,5 +1,5 @@
 import { createWorker, PSM } from 'tesseract.js'
-import { createProcessedCanvas } from './imageTools'
+import { createProcessedCanvas, releaseCanvas } from './imageTools'
 import type { ScanProgress } from '../types'
 
 type OcrProviderResult = {
@@ -10,7 +10,7 @@ type OcrProviderResult = {
 
 type OcrPass = {
   label: string
-  canvas: HTMLCanvasElement
+  createCanvas: () => HTMLCanvasElement
   psm: PSM
   whitelist: string
   progress: number
@@ -70,21 +70,21 @@ export async function runOcrProvider(
   const passes: OcrPass[] = [
     {
       label: 'OCR: normal label text',
-      canvas: createProcessedCanvas(sourceCanvas, 'general'),
+      createCanvas: () => createProcessedCanvas(sourceCanvas, 'general'),
       psm: PSM.SPARSE_TEXT,
       whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-(),.+',
       progress: 0.24,
     },
     {
       label: 'OCR: structured text block',
-      canvas: createProcessedCanvas(sourceCanvas, 'binary'),
+      createCanvas: () => createProcessedCanvas(sourceCanvas, 'binary'),
       psm: PSM.SINGLE_BLOCK,
       whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-(),.+',
       progress: 0.58,
     },
     {
       label: 'OCR: identifier digits',
-      canvas: createProcessedCanvas(sourceCanvas, 'digits'),
+      createCanvas: () => createProcessedCanvas(sourceCanvas, 'digits'),
       psm: PSM.SPARSE_TEXT,
       whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /:-.',
       progress: 0.78,
@@ -107,9 +107,15 @@ export async function runOcrProvider(
       tessedit_char_whitelist: pass.whitelist,
     })
 
-    const result = await worker.recognize(pass.canvas)
-    texts.push(result.data.text)
-    confidences.push(result.data.confidence)
+    const passCanvas = pass.createCanvas()
+
+    try {
+      const result = await worker.recognize(passCanvas)
+      texts.push(result.data.text)
+      confidences.push(result.data.confidence)
+    } finally {
+      releaseCanvas(passCanvas)
+    }
 
     const mergedText = mergeUniqueLines(texts)
     if (shouldStop?.(mergedText)) {

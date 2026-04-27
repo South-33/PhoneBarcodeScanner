@@ -87,6 +87,53 @@ function IconLogoMark() {
   )
 }
 
+function createPreviewUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file)
+    const image = new Image()
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+
+      const maxEdge = 720
+      const scale = Math.min(1, maxEdge / Math.max(image.width, image.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(image.width * scale))
+      canvas.height = Math.max(1, Math.round(image.height * scale))
+
+      const context = canvas.getContext('2d')
+      if (!context) {
+        reject(new Error('Canvas is not available in this browser.'))
+        return
+      }
+
+      context.drawImage(image, 0, 0, canvas.width, canvas.height)
+      canvas.toBlob(
+        (blob) => {
+          canvas.width = 0
+          canvas.height = 0
+
+          if (!blob) {
+            reject(new Error('Could not create the preview image.'))
+            return
+          }
+
+          resolve(URL.createObjectURL(blob))
+        },
+        'image/jpeg',
+        0.82,
+      )
+    }
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('Could not load the selected image.'))
+    }
+
+    image.src = objectUrl
+  })
+}
+
 function App() {
   const cameraInputId = useId()
   const uploadInputId = useId()
@@ -106,10 +153,9 @@ function App() {
   async function handleFile(file: File | null) {
     if (!file) return
 
-    const nextPreviewUrl = URL.createObjectURL(file)
     if (previewUrl) URL.revokeObjectURL(previewUrl)
 
-    setPreviewUrl(nextPreviewUrl)
+    setPreviewUrl(null)
     setScanResult(null)
     setErrorMessage(null)
     setIsScanning(true)
@@ -117,7 +163,9 @@ function App() {
 
     try {
       const result = await scanPhoneLabel(file, setScanProgress)
+      const nextPreviewUrl = await createPreviewUrl(file)
       setScanResult(result)
+      setPreviewUrl(nextPreviewUrl)
       setScanProgress({ label: 'Fields extracted', value: 1 })
     } catch (error) {
       setScanProgress(EMPTY_PROGRESS)
