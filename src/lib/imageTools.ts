@@ -1,4 +1,4 @@
-type PreprocessPreset = 'source' | 'general' | 'binary' | 'digits'
+type PreprocessPreset = 'source' | 'general' | 'binary' | 'digits' | 'screen'
 
 type CropRegion = {
   left: number
@@ -48,7 +48,7 @@ export function releaseCanvas(canvas: HTMLCanvasElement) {
 export async function buildSourceCanvas(file: File) {
   const image = await loadImage(file)
   const longestEdge = Math.max(image.width, image.height)
-  const targetEdge = 1600
+  const targetEdge = 2200
   const scale = Math.min(1, targetEdge / longestEdge)
   const width = Math.max(1, Math.round(image.width * scale))
   const height = Math.max(1, Math.round(image.height * scale))
@@ -81,7 +81,9 @@ export function createProcessedCanvas(
   context.filter =
     preset === 'general'
       ? 'grayscale(1) contrast(1.18) brightness(1.02)'
-      : 'grayscale(1) contrast(1.45) brightness(1.08)'
+      : preset === 'screen'
+        ? 'grayscale(1) contrast(1.9) brightness(1.08) blur(0.35px)'
+        : 'grayscale(1) contrast(1.45) brightness(1.08)'
   context.drawImage(sourceCanvas, 0, 0)
 
   const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
@@ -96,11 +98,19 @@ export function createProcessedCanvas(
     const stretched =
       preset === 'general'
         ? clamp((gray - 128) * 1.16 + 128, 0, 255)
+        : preset === 'screen'
+          ? clamp((gray - 128) * 1.95 + 128, 0, 255)
         : clamp((gray - 128) * 1.52 + 128, 0, 255)
 
     const cleaned =
       preset === 'general'
         ? Math.round(stretched)
+        : preset === 'screen'
+          ? stretched > 166
+            ? 255
+            : stretched < 118
+              ? 0
+              : Math.round(stretched)
         : stretched > 178
           ? 255
           : stretched < 104

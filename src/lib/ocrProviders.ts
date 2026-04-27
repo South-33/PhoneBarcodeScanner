@@ -89,6 +89,13 @@ export async function runOcrProvider(
       whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /:-.',
       progress: 0.78,
     },
+    {
+      label: 'OCR: screen glare cleanup',
+      createCanvas: () => createProcessedCanvas(sourceCanvas, 'screen'),
+      psm: PSM.SPARSE_TEXT,
+      whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-(),.+',
+      progress: 0.88,
+    },
   ]
 
   const texts: string[] = []
