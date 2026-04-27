@@ -34,7 +34,7 @@ test('resolves the iPhone sample from barcode-only identifiers', () => {
   assert.equal(result.metadata.deviceName, 'iPhone 11')
   assert.equal(result.metadata.modelNumber, 'A2221')
   assert.equal(result.metadata.serialNumber, 'DX3H1GZHN73D')
-  assert.deepEqual(result.metadata.imeis, ['355487738212604'])
+  assert.deepEqual(result.metadata.imeis, ['355487738212604', '355487738493683'])
   assert.deepEqual(result.metadata.eids, ['89049032005008882600059863581841'])
   assert.equal(result.metadata.upc, '194252099131')
   assert.equal(result.metadata.lookupProof?.source, 'exact_upc')
@@ -50,7 +50,7 @@ IMEI/MEID 355487738493683
 
   assert.equal(result.metadata.lookupProof?.source, 'exact_imei')
   assert.equal(result.metadata.serialNumber, 'DX3H1GZHN73D')
-  assert.deepEqual(result.metadata.imeis, ['355487738493683'])
+  assert.deepEqual(result.metadata.imeis, ['355487738493683', '355487738212604'])
   assert.deepEqual(result.metadata.eids, ['89049032005008882600059863581841'])
   assert.equal(result.metadata.upc, '194252099131')
 })

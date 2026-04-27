@@ -344,6 +344,10 @@ function chooseResolvedSerial(detectedSerial?: string, lookupSerial?: string) {
   return detectedSerial
 }
 
+function mergeResolvedDigits(detected: string[], lookup: string[] = []) {
+  return preferLongestNumericValues(uniqueValues([...detected, ...lookup]))
+}
+
 function extractModelCodes(source: string) {
   const matches: string[] = []
 
@@ -509,8 +513,8 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
 
   const lookupMatch = lookupFromIdentifiers(upc, imeis, serialNumber, modelCodes)
   const lookupRecord = lookupMatch?.record
-  const resolvedImeis = imeis.length ? imeis : lookupRecord?.imeis ?? []
-  const resolvedEids = eids.length ? eids : lookupRecord?.eids ?? []
+  const resolvedImeis = mergeResolvedDigits(imeis, lookupRecord?.imeis)
+  const resolvedEids = mergeResolvedDigits(eids, lookupRecord?.eids)
   const resolvedSerialNumber = chooseResolvedSerial(serialNumber, lookupRecord?.serialNumber)
   const resolvedUpc = upc || lookupRecord?.upc
 

@@ -81,6 +81,10 @@ function createBarcodeCanvases(sourceCanvas: HTMLCanvasElement) {
     createCropCanvas(sourceCanvas, { left: 0, top: 0.34, width: 1, height: 0.42 }, 'binary', 3),
     createCropCanvas(sourceCanvas, { left: 0, top: 0.44, width: 0.58, height: 0.34 }, 'binary', 4),
     createCropCanvas(sourceCanvas, { left: 0.42, top: 0.38, width: 0.58, height: 0.24 }, 'binary', 4),
+    createCropCanvas(sourceCanvas, { left: 0.02, top: 0.52, width: 0.68, height: 0.32 }, 'general', 5),
+    createCropCanvas(sourceCanvas, { left: 0.02, top: 0.52, width: 0.68, height: 0.32 }, 'binary', 5),
+    createCropCanvas(sourceCanvas, { left: 0.52, top: 0.50, width: 0.46, height: 0.20 }, 'general', 6),
+    createCropCanvas(sourceCanvas, { left: 0.52, top: 0.50, width: 0.46, height: 0.20 }, 'binary', 6),
   ]
 }
 
