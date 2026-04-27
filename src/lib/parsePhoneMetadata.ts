@@ -260,6 +260,17 @@ function collectFallbackEids(source: string, imeis: string[], upc?: string) {
   )
 }
 
+function collectFallbackImeis(source: string, eids: string[], upc?: string) {
+  const blocked = new Set([...eids, upc].filter(Boolean))
+
+  return uniqueValues(
+    [...source.matchAll(/\b\d{15,16}\b/g)]
+      .map((match) => normalizeImei(match[0]))
+      .filter((value) => !blocked.has(value))
+      .filter(isValidImei),
+  )
+}
+
 function guessIdentifiersFromBarcode(rawValue: string): BarcodeIdentifierGuess {
   const trimmed = rawValue.trim()
   const digits = normalizeDigits(trimmed)
@@ -431,12 +442,11 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
     ...barcodeGuesses.flatMap((guess) => guess.modelCodes),
   ])
 
-  const imeis = preferLongestNumericValues(
-    uniqueValues([
-      ...collectMatches(IMEI_PATTERN, normalizedText, normalizeImei),
-      ...barcodeGuesses.flatMap((guess) => guess.imeis),
-    ]).filter(isValidImei),
-  )
+  const labelledImeis = uniqueValues([
+    ...collectMatches(IMEI_PATTERN, normalizedText, normalizeImei),
+    ...barcodeGuesses.flatMap((guess) => guess.imeis),
+  ]).filter(isValidImei)
+
   let eids = preferLongestNumericValues(
     uniqueValues([
       ...collectMatches(EID_PATTERN, normalizedText, normalizeEid),
@@ -453,10 +463,17 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
   const upc = labelledUpc || barcodeUpc
 
   if (!eids.length) {
-    eids = collectFallbackEids(normalizedText, imeis, upc)
+    eids = collectFallbackEids(normalizedText, labelledImeis, upc)
       .map(normalizeEid)
       .filter(isValidEid)
   }
+
+  const imeis = preferLongestNumericValues(
+    uniqueValues([
+      ...labelledImeis,
+      ...collectFallbackImeis(normalizedText, eids, upc),
+    ]).filter(isValidImei),
+  )
 
   const lookupMatch = lookupFromIdentifiers(upc, imeis, serialNumber, modelCodes)
   const lookupRecord = lookupMatch?.record

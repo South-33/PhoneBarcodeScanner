@@ -74,6 +74,21 @@ test('resolves the Samsung sample from barcode-only identifiers through IMEI TAC
   assert.equal(result.metadata.lookupProof?.source, 'imei_tac')
 })
 
+test('recovers valid identifiers when OCR mangles the English label', () => {
+  const rawText = `
+Ti 351876764733760
+00 ODA OOO
+0 89043081202200836223027016618642
+MANUFACTURE DATE 2024 07 07
+`
+
+  const result = parsePhoneMetadata(rawText, [])
+
+  assert.deepEqual(result.metadata.imeis, ['351876764733760'])
+  assert.deepEqual(result.metadata.eids, ['89043081202200836223027016618642'])
+  assert.equal(result.metadata.lookupProof?.source, 'imei_tac')
+})
+
 test('falls back to family-level proof when only a major-brand model code is known', () => {
   const rawText = `
 OPPO : CPH2603

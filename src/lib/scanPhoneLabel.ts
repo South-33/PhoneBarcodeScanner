@@ -1,3 +1,4 @@
+import { BarcodeFormat, BrowserMultiFormatOneDReader } from '@zxing/browser'
 import { buildSourceCanvas, createProcessedCanvas } from './imageTools'
 import { runOcrProvider } from './ocrProviders'
 import { parsePhoneMetadata } from './parsePhoneMetadata'
@@ -15,6 +16,20 @@ type NativeBarcodeDetector = {
 type NativeBarcodeDetectorConstructor = {
   new (options?: { formats?: string[] }): NativeBarcodeDetector
   getSupportedFormats(): Promise<string[]>
+}
+
+function uniqueBarcodes(barcodes: BarcodeMatch[]) {
+  return [...new Map(
+    barcodes
+      .filter((barcode) => barcode.rawValue?.trim())
+      .map((barcode) => [
+        `${barcode.format}:${barcode.rawValue}`,
+        {
+          format: barcode.format,
+          rawValue: barcode.rawValue.trim(),
+        },
+      ]),
+  ).values()]
 }
 
 async function detectBarcodes(canvas: HTMLCanvasElement): Promise<NativeBarcodeResult> {
@@ -42,23 +57,69 @@ async function detectBarcodes(canvas: HTMLCanvasElement): Promise<NativeBarcodeR
 
     return {
       supported: true,
-      barcodes: [...new Map(
-        barcodes
-          .filter((barcode) => barcode.rawValue?.trim())
-          .map((barcode) => [
-            `${barcode.format}:${barcode.rawValue}`,
-            {
-              format: barcode.format,
-              rawValue: barcode.rawValue.trim(),
-            },
-          ]),
-      ).values()],
+      barcodes: uniqueBarcodes(
+        barcodes.map((barcode) => ({
+          format: barcode.format,
+          rawValue: barcode.rawValue,
+        })),
+      ),
     }
   } catch {
     return {
       barcodes: [],
       supported: true,
     }
+  }
+}
+
+function createBarcodeCanvases(sourceCanvas: HTMLCanvasElement) {
+  return [
+    sourceCanvas,
+    createProcessedCanvas(sourceCanvas, 'general'),
+    createProcessedCanvas(sourceCanvas, 'binary'),
+  ]
+}
+
+async function detectZxingBarcodes(canvas: HTMLCanvasElement): Promise<BarcodeMatch[]> {
+  const reader = new BrowserMultiFormatOneDReader()
+  reader.possibleFormats = [
+    BarcodeFormat.CODE_128,
+    BarcodeFormat.EAN_13,
+    BarcodeFormat.EAN_8,
+    BarcodeFormat.UPC_A,
+    BarcodeFormat.UPC_E,
+  ]
+
+  const matches: BarcodeMatch[] = []
+
+  for (const candidateCanvas of createBarcodeCanvases(canvas)) {
+    try {
+      const result = reader.decodeFromCanvas(candidateCanvas)
+      const rawValue = result.getText()
+
+      if (rawValue) {
+        matches.push({
+          format: String(result.getBarcodeFormat()),
+          rawValue,
+        })
+      }
+    } catch {
+      // ZXing throws on each failed decode attempt; a miss on one preset is normal.
+    }
+  }
+
+  return uniqueBarcodes(matches)
+}
+
+async function detectAllBarcodes(canvas: HTMLCanvasElement): Promise<NativeBarcodeResult> {
+  const [nativeResult, zxingBarcodes] = await Promise.all([
+    detectBarcodes(canvas),
+    detectZxingBarcodes(canvas),
+  ])
+
+  return {
+    supported: nativeResult.supported || zxingBarcodes.length > 0,
+    barcodes: uniqueBarcodes([...nativeResult.barcodes, ...zxingBarcodes]),
   }
 }
 
@@ -112,14 +173,13 @@ export async function scanPhoneLabel(
   })
 
   const sourceCanvas = await buildSourceCanvas(file)
-  const generalCanvas = createProcessedCanvas(sourceCanvas, 'general')
 
   emitProgress({
     label: 'Checking barcode area',
     value: 0.16,
   })
 
-  const barcodeResult = await detectBarcodes(sourceCanvas)
+  const barcodeResult = await detectAllBarcodes(sourceCanvas)
   const barcodeOnlyParse = parsePhoneMetadata('', barcodeResult.barcodes)
   const barcodeIdentifierCount = countDetectedIdentifiers(barcodeOnlyParse.metadata)
 
@@ -147,7 +207,12 @@ export async function scanPhoneLabel(
     }
   }
 
-  const ocrResult = await runOcrProvider(generalCanvas, sourceCanvas, emitProgress)
+  const ocrResult = await runOcrProvider(sourceCanvas, emitProgress, (text) => {
+    const mergedText = mergeWholeImageText(text, '')
+    const parsed = parsePhoneMetadata(mergedText, barcodeResult.barcodes)
+
+    return countDetectedIdentifiers(parsed.metadata) >= 2 || Boolean(parsed.metadata.lookupProof)
+  })
 
   emitProgress({
     label: 'Extracting fields from OCR text',
