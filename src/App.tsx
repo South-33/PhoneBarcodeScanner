@@ -8,6 +8,26 @@ const EMPTY_PROGRESS: ScanProgress = {
   value: 0,
 }
 
+const SUPPORTED_BRANDS = [
+  'Apple',
+  'Samsung',
+  'Google Pixel',
+  'Xiaomi',
+  'Redmi',
+  'POCO',
+  'OnePlus',
+  'OPPO',
+  'vivo',
+  'iQOO',
+  'realme',
+  'Motorola',
+  'Nothing',
+  'Huawei',
+  'Honor',
+  'Sony',
+  'Nokia',
+]
+
 function formatLookupSource(source?: string) {
   switch (source) {
     case 'exact_upc':
@@ -170,24 +190,9 @@ function App() {
 
         {/* ── Left sidebar: capture ── */}
         <aside className="capture-sidebar" aria-label="Capture controls">
-          <p className="sidebar-eyebrow">Phone store demo</p>
-
-          <h1 className="sidebar-title">
-            Scan the box.<br />
-            Skip the <em>typing.</em>
-          </h1>
-          <p className="sidebar-lead">
-            Point your camera at the barcode strip on the phone box. IMEI, serial, and
-            all stock fields are extracted automatically.
-          </p>
-
-          <div className="workflow-pills" aria-label="Workflow steps">
-            {['Capture label', 'Decode barcode', 'Clean metadata'].map((step, i) => (
-              <span className="workflow-pill" key={step}>
-                <span className="pill-num">{i + 1}</span>
-                {step}
-              </span>
-            ))}
+          <div className="capture-title-row">
+            <p className="sidebar-eyebrow">Phone store demo</p>
+            <p className="capture-focus">Barcode first</p>
           </div>
 
           <div className="capture-actions">
@@ -219,10 +224,16 @@ function App() {
             />
           </div>
 
-          <p className="capture-tip">
-            Best results: fill the frame with the barcode strip, keep glare off the
-            plastic wrap, and include the product line text above the bars.
-          </p>
+          <div className="brand-support" aria-label="Supported phone brands">
+            <p className="brand-support-label">Brand coverage</p>
+            <div className="brand-chip-list">
+              {SUPPORTED_BRANDS.map((brand) => (
+                <span className="brand-chip" key={brand}>
+                  {brand}
+                </span>
+              ))}
+            </div>
+          </div>
 
           {/* Preview */}
           <div className="preview-wrap">
