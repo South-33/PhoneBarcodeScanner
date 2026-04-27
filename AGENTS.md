@@ -8,4 +8,5 @@ This is the project's AGENTS.md
 - Android variant lines -> parse RAM and storage separately; labels like `8GB+256GB` or `12GB/512GB` should not treat the first capacity as storage.
 - OCR quality -> the image preprocessing in `src/lib/imageTools.ts` matters; glare on shrink-wrap and wide shots are the main failure modes to fix before changing parsing rules.
 - Docs -> Apple confirms iPhone packaging includes serial, EID, and IMEI/MEID on the box: https://support.apple.com/en-us/108037
+- Docs -> full TAC-to-device lookup is not freely bundled; GSMA says TAC/IMEI allocation records live in the GSMA IMEI/Device Registry, so local demo data must stay seed-based unless a licensed source is added: https://imeidb.gsma.com/imei/loginpage
 - Docs -> Tesseract.js recommends reusing a worker, and Tesseract docs note higher-resolution images improve OCR: https://github.com/naptha/tesseract.js and https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html

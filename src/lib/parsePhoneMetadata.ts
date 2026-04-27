@@ -16,6 +16,7 @@ type LookupRecord = {
 type ModelCodeRule = {
   brand: string
   pattern: RegExp
+  brandContext?: RegExp
 }
 
 type BarcodeIdentifierGuess = {
@@ -83,17 +84,103 @@ const EXACT_MODEL_CODE_LOOKUP: Record<string, LookupRecord> = {
     deviceName: 'Galaxy Watch5 Pro LTE (45mm)',
     modelNumber: 'SM-R925F',
   },
+  'SM-S921B': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy S24',
+    modelNumber: 'SM-S921B',
+  },
+  'SM-S921U': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy S24',
+    modelNumber: 'SM-S921U',
+  },
+  'SM-S926B': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy S24+',
+    modelNumber: 'SM-S926B',
+  },
+  'SM-S926U': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy S24+',
+    modelNumber: 'SM-S926U',
+  },
+  'SM-S928B': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy S24 Ultra',
+    modelNumber: 'SM-S928B',
+  },
+  'SM-S928U': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy S24 Ultra',
+    modelNumber: 'SM-S928U',
+  },
+  'SM-A556B': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy A55 5G',
+    modelNumber: 'SM-A556B',
+  },
+  'SM-A356B': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy A35 5G',
+    modelNumber: 'SM-A356B',
+  },
+  'SM-A546B': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy A54 5G',
+    modelNumber: 'SM-A546B',
+  },
+  'SM-A346B': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy A34 5G',
+    modelNumber: 'SM-A346B',
+  },
+  'SM-F956B': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy Z Fold6',
+    modelNumber: 'SM-F956B',
+  },
+  'SM-F956U': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy Z Fold6',
+    modelNumber: 'SM-F956U',
+  },
+  'SM-F741B': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy Z Flip6',
+    modelNumber: 'SM-F741B',
+  },
+  'SM-F741U': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy Z Flip6',
+    modelNumber: 'SM-F741U',
+  },
+  'SM-F946B': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy Z Fold5',
+    modelNumber: 'SM-F946B',
+  },
+  'SM-F731B': {
+    brand: 'Samsung',
+    deviceName: 'Galaxy Z Flip5',
+    modelNumber: 'SM-F731B',
+  },
 }
 
 const MODEL_CODE_RULES: ModelCodeRule[] = [
   { brand: 'Samsung', pattern: /\bSM-[A-Z0-9]{4,8}(?:\/[A-Z0-9]{1,4})?\b/i },
+  { brand: 'Google Pixel', pattern: /\bG[A-Z0-9]{4}\b/i, brandContext: /\b(?:GOOGLE|PIXEL)\b/i },
+  { brand: 'OnePlus', pattern: /\b(?:CPH|NE|LE|KB|IN)\d{3,5}\b/i, brandContext: /\bONE\s*PLUS\b/i },
+  { brand: 'POCO', pattern: /\b\d{5,8}[A-Z0-9]{2,8}\b/i, brandContext: /\bPOCO\b/i },
+  { brand: 'Redmi', pattern: /\b\d{5,8}[A-Z0-9]{2,8}\b/i, brandContext: /\bREDMI\b/i },
+  { brand: 'Honor', pattern: /\b[A-Z]{3,5}-[A-Z0-9]{2,5}\b/i, brandContext: /\bHONOR\b/i },
+  { brand: 'iQOO', pattern: /\b(?:I\d{4,5}|V\d{4,5}[A-Z]?)\b/i, brandContext: /\bIQOO\b/i },
   { brand: 'Motorola', pattern: /\bXT\d{4,5}(?:-\d+)?\b/i },
   { brand: 'realme', pattern: /\bRMX\d{4,5}\b/i },
   { brand: 'OPPO', pattern: /\bCPH\d{4}\b/i },
   { brand: 'vivo', pattern: /\bV\d{4,5}\b/i },
   { brand: 'Sony', pattern: /\bXQ-[A-Z]{2}\d{2,4}\b/i },
   { brand: 'Nokia', pattern: /\bTA-\d{4}\b/i },
-  { brand: 'Xiaomi', pattern: /\b\d{6,8}[A-Z]{1,4}\b/i },
+  { brand: 'Xiaomi', pattern: /\b\d{5,8}[A-Z0-9]{2,8}\b/i, brandContext: /\bXIAOMI\b/i },
   { brand: 'Huawei', pattern: /\b[A-Z]{3,5}-[A-Z0-9]{2,5}\b/i },
   { brand: 'Nothing', pattern: /\bA0\d{2}\b/i },
 ]
@@ -135,6 +222,13 @@ function normalizeEid(value: string) {
 
 function normalizeSerial(value: string) {
   return value.replace(/[^A-Z0-9]/gi, '').toUpperCase()
+}
+
+function normalizeModelCode(value: string) {
+  return value
+    .replace(/\s+/g, '')
+    .replace(/\/(?:DS|DUAL|GLOBAL)$/i, '')
+    .toUpperCase()
 }
 
 function normalizeSku(value: string) {
@@ -349,22 +443,35 @@ function extractModelCodes(source: string) {
   const matches: string[] = []
 
   for (const rule of MODEL_CODE_RULES) {
+    if (rule.brandContext && !rule.brandContext.test(source)) {
+      continue
+    }
+
     for (const match of source.matchAll(new RegExp(rule.pattern.source, 'gi'))) {
       if (match[0]) {
-        matches.push(match[0].toUpperCase())
+        matches.push(normalizeModelCode(match[0]))
       }
+    }
+  }
+
+  for (const modelCode of Object.keys(EXACT_MODEL_CODE_LOOKUP)) {
+    if (new RegExp(`\\b${modelCode.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}(?:/[A-Z0-9]{1,6})?\\b`, 'i').test(source)) {
+      matches.push(modelCode)
     }
   }
 
   return uniqueValues(matches)
 }
 
-function lookupBrandFromModelCode(modelCode?: string) {
+function lookupBrandFromModelCode(modelCode?: string, source = '') {
   if (!modelCode) {
     return undefined
   }
 
-  return MODEL_CODE_RULES.find((rule) => rule.pattern.test(modelCode))?.brand
+  return MODEL_CODE_RULES.find(
+    (rule) =>
+      rule.pattern.test(modelCode) && (!rule.brandContext || rule.brandContext.test(source)),
+  )?.brand
 }
 
 function lookupFromIdentifiers(
@@ -373,6 +480,7 @@ function lookupFromIdentifiers(
   serialNumber?: string,
   skuCodes: string[] = [],
   modelCodes: string[] = [],
+  source = '',
 ) {
   if (upc && EXACT_UPC_LOOKUP[upc]) {
     return {
@@ -459,7 +567,7 @@ function lookupFromIdentifiers(
   }
 
   for (const modelCode of modelCodes) {
-    const brand = lookupBrandFromModelCode(modelCode)
+    const brand = lookupBrandFromModelCode(modelCode, source)
     if (brand) {
       const familyRecord: LookupRecord = {
         brand,
@@ -525,7 +633,14 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
     ]).filter(isValidImei),
   )
 
-  const lookupMatch = lookupFromIdentifiers(upc, imeis, serialNumber, skuCodes, modelCodes)
+  const lookupMatch = lookupFromIdentifiers(
+    upc,
+    imeis,
+    serialNumber,
+    skuCodes,
+    modelCodes,
+    normalizedText,
+  )
   const lookupRecord = lookupMatch?.record
   const resolvedImeis = mergeResolvedDigits(imeis, lookupRecord?.imeis)
   const resolvedEids = mergeResolvedDigits(eids, lookupRecord?.eids)

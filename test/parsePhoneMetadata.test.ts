@@ -114,6 +114,20 @@ IMEI: 351876764733760 B
   assert.equal(result.metadata.lookupProof?.source, 'exact_model_code')
 })
 
+test('normalizes Samsung retail suffixes and resolves common exact model codes', () => {
+  const rawText = `
+SAMSUNG SM-S928B/DS
+IMEI 350000000000012
+`
+
+  const result = parsePhoneMetadata(rawText, [])
+
+  assert.equal(result.metadata.brand, 'Samsung')
+  assert.equal(result.metadata.deviceName, 'Galaxy S24 Ultra')
+  assert.equal(result.metadata.modelNumber, 'SM-S928B')
+  assert.equal(result.metadata.lookupProof?.source, 'exact_model_code')
+})
+
 test('resolves the Samsung sample from barcode-only identifiers through IMEI TAC', () => {
   const result = parsePhoneMetadata('', [
     { format: 'code_128', rawValue: '351876764733760' },
@@ -155,4 +169,29 @@ IMEI 867530900000001
   assert.equal(result.metadata.modelNumber, 'CPH2603')
   assert.equal(result.metadata.lookupProof?.source, 'model_code_family')
   assert.match(result.metadata.notes.join(' '), /family match/i)
+})
+
+test('uses brand context for ambiguous Android model-code families', () => {
+  const rawText = `
+OnePlus CPH2581
+IMEI 350000000000012
+`
+
+  const result = parsePhoneMetadata(rawText, [])
+
+  assert.equal(result.metadata.brand, 'OnePlus')
+  assert.equal(result.metadata.modelNumber, 'CPH2581')
+  assert.equal(result.metadata.lookupProof?.source, 'model_code_family')
+})
+
+test('detects Pixel and Xiaomi-family model codes only with brand context', () => {
+  const pixel = parsePhoneMetadata('Google Pixel G9BQD\nIMEI 350000000000012', [])
+  const poco = parsePhoneMetadata('POCO 24069PC21G\nIMEI 350000000000012', [])
+
+  assert.equal(pixel.metadata.brand, 'Google Pixel')
+  assert.equal(pixel.metadata.modelNumber, 'G9BQD')
+  assert.equal(pixel.metadata.lookupProof?.source, 'model_code_family')
+  assert.equal(poco.metadata.brand, 'POCO')
+  assert.equal(poco.metadata.modelNumber, '24069PC21G')
+  assert.equal(poco.metadata.lookupProof?.source, 'model_code_family')
 })
