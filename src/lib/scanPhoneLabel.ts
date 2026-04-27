@@ -1,5 +1,5 @@
 import { BarcodeFormat, BrowserMultiFormatOneDReader } from '@zxing/browser'
-import { buildSourceCanvas, createProcessedCanvas } from './imageTools'
+import { buildSourceCanvas, createCropCanvas, createProcessedCanvas } from './imageTools'
 import { runOcrProvider } from './ocrProviders'
 import { parsePhoneMetadata } from './parsePhoneMetadata'
 import type { BarcodeMatch, PhoneLabelScanResult, ScanProgress } from '../types'
@@ -77,6 +77,10 @@ function createBarcodeCanvases(sourceCanvas: HTMLCanvasElement) {
     sourceCanvas,
     createProcessedCanvas(sourceCanvas, 'general'),
     createProcessedCanvas(sourceCanvas, 'binary'),
+    createCropCanvas(sourceCanvas, { left: 0, top: 0.34, width: 1, height: 0.42 }, 'general', 3),
+    createCropCanvas(sourceCanvas, { left: 0, top: 0.34, width: 1, height: 0.42 }, 'binary', 3),
+    createCropCanvas(sourceCanvas, { left: 0, top: 0.44, width: 0.58, height: 0.34 }, 'binary', 4),
+    createCropCanvas(sourceCanvas, { left: 0.42, top: 0.38, width: 0.58, height: 0.24 }, 'binary', 4),
   ]
 }
 

@@ -40,6 +40,21 @@ test('resolves the iPhone sample from barcode-only identifiers', () => {
   assert.equal(result.metadata.lookupProof?.source, 'exact_upc')
 })
 
+test('backfills known identifiers from an exact IMEI lookup', () => {
+  const rawText = `
+IMEI/MEID 355487738493683
+(S) Serial No. DX3H1GZHN7
+`
+
+  const result = parsePhoneMetadata(rawText, [])
+
+  assert.equal(result.metadata.lookupProof?.source, 'exact_imei')
+  assert.equal(result.metadata.serialNumber, 'DX3H1GZHN73D')
+  assert.deepEqual(result.metadata.imeis, ['355487738493683'])
+  assert.deepEqual(result.metadata.eids, ['89049032005008882600059863581841'])
+  assert.equal(result.metadata.upc, '194252099131')
+})
+
 test('resolves the Samsung sample from model-code identifiers', () => {
   const rawText = `
 SAMSUNG : SM-R925F

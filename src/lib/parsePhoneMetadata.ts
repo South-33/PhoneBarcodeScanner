@@ -7,6 +7,10 @@ type LookupRecord = {
   color?: string
   skuCode?: string
   modelNumber?: string
+  serialNumber?: string
+  imeis?: string[]
+  eids?: string[]
+  upc?: string
 }
 
 type ModelCodeRule = {
@@ -37,6 +41,10 @@ const EXACT_UPC_LOOKUP: Record<string, LookupRecord> = {
     color: 'Black',
     skuCode: 'MHDH3QN/A',
     modelNumber: 'A2221',
+    serialNumber: 'DX3H1GZHN73D',
+    imeis: ['355487738212604', '355487738493683'],
+    eids: ['89049032005008882600059863581841'],
+    upc: '194252099131',
   },
 }
 
@@ -48,6 +56,10 @@ const EXACT_IMEI_LOOKUP: Record<string, LookupRecord> = {
     color: 'Black',
     skuCode: 'MHDH3QN/A',
     modelNumber: 'A2221',
+    serialNumber: 'DX3H1GZHN73D',
+    imeis: ['355487738212604', '355487738493683'],
+    eids: ['89049032005008882600059863581841'],
+    upc: '194252099131',
   },
   '355487738493683': {
     brand: 'Apple',
@@ -56,6 +68,10 @@ const EXACT_IMEI_LOOKUP: Record<string, LookupRecord> = {
     color: 'Black',
     skuCode: 'MHDH3QN/A',
     modelNumber: 'A2221',
+    serialNumber: 'DX3H1GZHN73D',
+    imeis: ['355487738212604', '355487738493683'],
+    eids: ['89049032005008882600059863581841'],
+    upc: '194252099131',
   },
 }
 
@@ -80,6 +96,10 @@ const EXACT_SERIAL_LOOKUP: Record<string, LookupRecord> = {
     color: 'Black',
     skuCode: 'MHDH3QN/A',
     modelNumber: 'A2221',
+    serialNumber: 'DX3H1GZHN73D',
+    imeis: ['355487738212604', '355487738493683'],
+    eids: ['89049032005008882600059863581841'],
+    upc: '194252099131',
   },
 }
 
@@ -312,6 +332,18 @@ function buildDisplayName(record?: LookupRecord) {
   return [record.deviceName, record.color, record.storage].filter(Boolean).join(' ')
 }
 
+function chooseResolvedSerial(detectedSerial?: string, lookupSerial?: string) {
+  if (!lookupSerial) {
+    return detectedSerial
+  }
+
+  if (!detectedSerial || lookupSerial.startsWith(detectedSerial)) {
+    return lookupSerial
+  }
+
+  return detectedSerial
+}
+
 function extractModelCodes(source: string) {
   const matches: string[] = []
 
@@ -477,10 +509,14 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
 
   const lookupMatch = lookupFromIdentifiers(upc, imeis, serialNumber, modelCodes)
   const lookupRecord = lookupMatch?.record
+  const resolvedImeis = imeis.length ? imeis : lookupRecord?.imeis ?? []
+  const resolvedEids = eids.length ? eids : lookupRecord?.eids ?? []
+  const resolvedSerialNumber = chooseResolvedSerial(serialNumber, lookupRecord?.serialNumber)
+  const resolvedUpc = upc || lookupRecord?.upc
 
   const notes: string[] = []
 
-  if ((imeis.length || serialNumber || upc) && !lookupRecord) {
+  if ((resolvedImeis.length || resolvedSerialNumber || resolvedUpc) && !lookupRecord) {
     notes.push(
       'Identifiers were found, but no metadata lookup matched them yet. Add a TAC/GTIN/product database to resolve model details.',
     )
@@ -498,7 +534,7 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
     )
   }
 
-  if (!imeis.length && !serialNumber && !upc && !eids.length) {
+  if (!resolvedImeis.length && !resolvedSerialNumber && !resolvedUpc && !resolvedEids.length) {
     notes.push(
       'No usable identifiers were detected. Center the barcode/serial strip and keep it sharp.',
     )
@@ -512,10 +548,10 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
     color: lookupRecord?.color,
     skuCode: lookupRecord?.skuCode,
     modelNumber: lookupRecord?.modelNumber || modelCodes[0],
-    serialNumber,
-    imeis,
-    eids,
-    upc,
+    serialNumber: resolvedSerialNumber,
+    imeis: resolvedImeis,
+    eids: resolvedEids,
+    upc: resolvedUpc,
     lookupProof: lookupMatch?.proof,
     notes,
     rawLines: normalizedText
