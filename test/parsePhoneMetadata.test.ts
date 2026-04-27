@@ -48,10 +48,49 @@ IMEI/MEID 355487738493683
 
   const result = parsePhoneMetadata(rawText, [])
 
-  assert.equal(result.metadata.lookupProof?.source, 'exact_imei')
+  assert.equal(result.metadata.lookupProof?.confidence, 'exact')
   assert.equal(result.metadata.serialNumber, 'DX3H1GZHN73D')
   assert.deepEqual(result.metadata.imeis, ['355487738493683', '355487738212604'])
   assert.deepEqual(result.metadata.eids, ['89049032005008882600059863581841'])
+  assert.equal(result.metadata.upc, '194252099131')
+})
+
+test('parses iPhone monitor-photo OCR with IMEI2 label', () => {
+  const rawText = `
+MHDH3QN/A iPhone 11, Black, 128GB
+Other items as marked thereon Model A2221
+EID 89049032005008882600059863581841
+IMEI2 355487738212604
+(S) Serial No. DX3H1GZHN73D
+IMEI/MEID 355487738493683
+`
+
+  const result = parsePhoneMetadata(rawText, [])
+
+  assert.equal(result.metadata.lookupProof?.confidence, 'exact')
+  assert.equal(result.metadata.serialNumber, 'DX3H1GZHN73D')
+  assert.deepEqual(result.metadata.imeis, ['355487738212604', '355487738493683'])
+  assert.deepEqual(result.metadata.eids, ['89049032005008882600059863581841'])
+  assert.equal(result.metadata.upc, '194252099131')
+})
+
+test('resolves the iPhone sample from a noisy SKU/product line fallback', () => {
+  const rawText = `
+MHDH3QN/4  iPhone 11 Black, 1285
+Designeg Dy Apple in California  Assempleq in Cf
+Other items a Markeqg thereon  Model A255
+EID IN 5 5c2250005050050n
+IME/2 Wie 38212604
+MEME 35545 773849364
+`
+
+  const result = parsePhoneMetadata(rawText, [])
+
+  assert.equal(result.metadata.lookupProof?.source, 'exact_sku')
+  assert.equal(result.metadata.brand, 'Apple')
+  assert.equal(result.metadata.deviceName, 'iPhone 11')
+  assert.equal(result.metadata.serialNumber, 'DX3H1GZHN73D')
+  assert.deepEqual(result.metadata.imeis, ['355487738212604', '355487738493683'])
   assert.equal(result.metadata.upc, '194252099131')
 })
 

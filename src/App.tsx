@@ -36,6 +36,8 @@ function formatLookupSource(source?: string) {
       return 'Exact IMEI match'
     case 'exact_serial':
       return 'Exact serial match'
+    case 'exact_sku':
+      return 'Exact SKU match'
     case 'imei_tac':
       return 'IMEI TAC match'
     case 'exact_model_code':

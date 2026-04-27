@@ -13,10 +13,11 @@ export type LookupProof = {
     | 'exact_upc'
     | 'exact_imei'
     | 'exact_serial'
+    | 'exact_sku'
     | 'imei_tac'
     | 'exact_model_code'
     | 'model_code_family'
-  identifierType: 'upc' | 'imei' | 'serial' | 'imei_tac' | 'model_code'
+  identifierType: 'upc' | 'imei' | 'serial' | 'sku' | 'imei_tac' | 'model_code'
   identifierValue: string
   confidence: 'exact' | 'family'
 }

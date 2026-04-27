@@ -160,6 +160,7 @@ function mergeWholeImageText(primaryText: string, secondaryText: string) {
       .filter(
         (line) =>
           interestingLine.test(line) ||
+          /\b[A-Z0-9]{5,8}\s*\/\s*[A-Z0-9]\b/i.test(line) ||
           /\b\d{12,32}\b/.test(line) ||
           (identifierLikeLine.test(line) && /\d/.test(line)),
       ),

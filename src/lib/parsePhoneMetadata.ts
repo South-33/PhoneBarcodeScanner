@@ -26,53 +26,38 @@ type BarcodeIdentifierGuess = {
   modelCodes: string[]
 }
 
-const IMEI_PATTERN = /\bIMEI?(?:\/MEID)?[:\s-]*([0-9 ]{14,22})/gi
+const IMEI_PATTERN = /\bIMEI\s*[12]?(?:\s*\/\s*MEID)?[:\s-]*([0-9 OQIl|]{14,26})/gi
 const SERIAL_PATTERN =
   /\b(?:Serial(?:\s*(?:No\.?|Number))?|S\/N|SN)\b[^A-Z0-9]{0,8}([A-Z0-9-]{6,24})/gi
-const EID_PATTERN = /\bEID\b[^0-9]{0,8}([0-9 ]{16,40})/gi
+const EID_PATTERN = /\bEID\b[^0-9OQIl|]{0,10}([0-9 OQIl|]{16,44})/gi
 const UPC_PATTERN =
-  /\b(?:UPC|EAN|GTIN)\b[^0-9]{0,8}([0-9 ]{8,18})\b/gi
+  /\b(?:UPC|EAN|GTIN)\b[^0-9OQIl|]{0,10}([0-9 OQIl|]{8,20})\b/gi
+const APPLE_SKU_PATTERN = /\b([A-Z0-9]{5,7}\s*[A-Z0-9]?\s*\/\s*[A-Z0-9])\b/gi
+
+const IPHONE_SAMPLE_RECORD: LookupRecord = {
+  brand: 'Apple',
+  deviceName: 'iPhone 11',
+  storage: '128GB',
+  color: 'Black',
+  skuCode: 'MHDH3QN/A',
+  modelNumber: 'A2221',
+  serialNumber: 'DX3H1GZHN73D',
+  imeis: ['355487738212604', '355487738493683'],
+  eids: ['89049032005008882600059863581841'],
+  upc: '194252099131',
+}
 
 const EXACT_UPC_LOOKUP: Record<string, LookupRecord> = {
-  '194252099131': {
-    brand: 'Apple',
-    deviceName: 'iPhone 11',
-    storage: '128GB',
-    color: 'Black',
-    skuCode: 'MHDH3QN/A',
-    modelNumber: 'A2221',
-    serialNumber: 'DX3H1GZHN73D',
-    imeis: ['355487738212604', '355487738493683'],
-    eids: ['89049032005008882600059863581841'],
-    upc: '194252099131',
-  },
+  '194252099131': IPHONE_SAMPLE_RECORD,
 }
 
 const EXACT_IMEI_LOOKUP: Record<string, LookupRecord> = {
-  '355487738212604': {
-    brand: 'Apple',
-    deviceName: 'iPhone 11',
-    storage: '128GB',
-    color: 'Black',
-    skuCode: 'MHDH3QN/A',
-    modelNumber: 'A2221',
-    serialNumber: 'DX3H1GZHN73D',
-    imeis: ['355487738212604', '355487738493683'],
-    eids: ['89049032005008882600059863581841'],
-    upc: '194252099131',
-  },
-  '355487738493683': {
-    brand: 'Apple',
-    deviceName: 'iPhone 11',
-    storage: '128GB',
-    color: 'Black',
-    skuCode: 'MHDH3QN/A',
-    modelNumber: 'A2221',
-    serialNumber: 'DX3H1GZHN73D',
-    imeis: ['355487738212604', '355487738493683'],
-    eids: ['89049032005008882600059863581841'],
-    upc: '194252099131',
-  },
+  '355487738212604': IPHONE_SAMPLE_RECORD,
+  '355487738493683': IPHONE_SAMPLE_RECORD,
+}
+
+const EXACT_SKU_LOOKUP: Record<string, LookupRecord> = {
+  'MHDH3QN/A': IPHONE_SAMPLE_RECORD,
 }
 
 const IMEI_TAC_LOOKUP: Record<string, LookupRecord> = {
@@ -89,18 +74,7 @@ const IMEI_TAC_LOOKUP: Record<string, LookupRecord> = {
 }
 
 const EXACT_SERIAL_LOOKUP: Record<string, LookupRecord> = {
-  DX3H1GZHN73D: {
-    brand: 'Apple',
-    deviceName: 'iPhone 11',
-    storage: '128GB',
-    color: 'Black',
-    skuCode: 'MHDH3QN/A',
-    modelNumber: 'A2221',
-    serialNumber: 'DX3H1GZHN73D',
-    imeis: ['355487738212604', '355487738493683'],
-    eids: ['89049032005008882600059863581841'],
-    upc: '194252099131',
-  },
+  DX3H1GZHN73D: IPHONE_SAMPLE_RECORD,
 }
 
 const EXACT_MODEL_CODE_LOOKUP: Record<string, LookupRecord> = {
@@ -161,6 +135,21 @@ function normalizeEid(value: string) {
 
 function normalizeSerial(value: string) {
   return value.replace(/[^A-Z0-9]/gi, '').toUpperCase()
+}
+
+function normalizeSku(value: string) {
+  const cleaned = value
+    .replace(/\s+/g, '')
+    .replace(/\\/g, '/')
+    .toUpperCase()
+
+  const [prefix, suffix] = cleaned.split('/')
+  if (!prefix || !suffix) {
+    return cleaned
+  }
+
+  const fixedSuffix = suffix.replace(/^4$/, 'A').replace(/^1$/, 'I').replace(/^0$/, 'O')
+  return `${prefix}/${fixedSuffix}`
 }
 
 function normalizeText(input: string) {
@@ -291,6 +280,14 @@ function collectFallbackImeis(source: string, eids: string[], upc?: string) {
   )
 }
 
+function extractSkuCodes(source: string) {
+  return uniqueValues(
+    [...source.matchAll(APPLE_SKU_PATTERN)]
+      .map((match) => normalizeSku(match[1] ?? ''))
+      .filter((value) => /^[A-Z0-9]{5,8}\/[A-Z0-9]$/.test(value)),
+  )
+}
+
 function guessIdentifiersFromBarcode(rawValue: string): BarcodeIdentifierGuess {
   const trimmed = rawValue.trim()
   const digits = normalizeDigits(trimmed)
@@ -374,6 +371,7 @@ function lookupFromIdentifiers(
   upc?: string,
   imeis: string[] = [],
   serialNumber?: string,
+  skuCodes: string[] = [],
   modelCodes: string[] = [],
 ) {
   if (upc && EXACT_UPC_LOOKUP[upc]) {
@@ -397,6 +395,21 @@ function lookupFromIdentifiers(
         identifierValue: serialNumber,
         confidence: 'exact',
       } satisfies LookupProof,
+    }
+  }
+
+  for (const skuCode of skuCodes) {
+    const exact = EXACT_SKU_LOOKUP[skuCode]
+    if (exact) {
+      return {
+        record: exact,
+        proof: {
+          source: 'exact_sku',
+          identifierType: 'sku',
+          identifierValue: skuCode,
+          confidence: 'exact',
+        } satisfies LookupProof,
+      }
     }
   }
 
@@ -473,6 +486,7 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
   const normalizedText = normalizeText(rawText)
   const barcodeValues = uniqueValues(barcodes.map((barcode) => barcode.rawValue.trim()))
   const barcodeGuesses = barcodeValues.map(guessIdentifiersFromBarcode)
+  const skuCodes = extractSkuCodes(normalizedText)
   const modelCodes = uniqueValues([
     ...extractModelCodes(normalizedText),
     ...barcodeGuesses.flatMap((guess) => guess.modelCodes),
@@ -511,7 +525,7 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
     ]).filter(isValidImei),
   )
 
-  const lookupMatch = lookupFromIdentifiers(upc, imeis, serialNumber, modelCodes)
+  const lookupMatch = lookupFromIdentifiers(upc, imeis, serialNumber, skuCodes, modelCodes)
   const lookupRecord = lookupMatch?.record
   const resolvedImeis = mergeResolvedDigits(imeis, lookupRecord?.imeis)
   const resolvedEids = mergeResolvedDigits(eids, lookupRecord?.eids)
@@ -550,7 +564,7 @@ export function parsePhoneMetadata(rawText: string, barcodes: BarcodeMatch[]) {
     deviceName: lookupRecord?.deviceName,
     storage: lookupRecord?.storage,
     color: lookupRecord?.color,
-    skuCode: lookupRecord?.skuCode,
+    skuCode: lookupRecord?.skuCode || skuCodes[0],
     modelNumber: lookupRecord?.modelNumber || modelCodes[0],
     serialNumber: resolvedSerialNumber,
     imeis: resolvedImeis,

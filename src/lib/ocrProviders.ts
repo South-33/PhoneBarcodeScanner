@@ -1,5 +1,5 @@
 import { createWorker, PSM } from 'tesseract.js'
-import { createProcessedCanvas, releaseCanvas } from './imageTools'
+import { createCropCanvas, createProcessedCanvas, releaseCanvas } from './imageTools'
 import type { ScanProgress } from '../types'
 
 type OcrProviderResult = {
@@ -88,6 +88,32 @@ export async function runOcrProvider(
       psm: PSM.SPARSE_TEXT,
       whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /:-.',
       progress: 0.78,
+    },
+    {
+      label: 'OCR: identifier strip',
+      createCanvas: () =>
+        createCropCanvas(
+          sourceCanvas,
+          { left: 0.04, top: 0.24, width: 0.92, height: 0.62 },
+          'screen',
+          2.4,
+        ),
+      psm: PSM.SPARSE_TEXT,
+      whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 /:-(),.+',
+      progress: 0.84,
+    },
+    {
+      label: 'OCR: identifier strip digits',
+      createCanvas: () =>
+        createCropCanvas(
+          sourceCanvas,
+          { left: 0.04, top: 0.34, width: 0.88, height: 0.42 },
+          'digits',
+          2.8,
+        ),
+      psm: PSM.SPARSE_TEXT,
+      whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 /:-.',
+      progress: 0.86,
     },
     {
       label: 'OCR: screen glare cleanup',
